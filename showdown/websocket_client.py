@@ -3,7 +3,7 @@ import websockets
 import requests
 import json
 import time
-
+import numpy as np
 import logging
 logger = logging.getLogger(__name__)
 
@@ -115,29 +115,26 @@ class PSWebsocketClient:
         await self.send_message('', message)
         self.last_challenge_time = time.time()
 
-    async def accept_challenge(self, battle_format, team, room_name):
+    async def accept_challenge(self, battle_format, team, room_name, user_to_challenge):
         if room_name is not None:
             await self.join_room(room_name)
-
         logger.debug("Waiting for a {} challenge".format(battle_format))
         await self.update_team(team)
-        username = None
-        while username is None:
+        while user_to_challenge is None:
             msg = await self.receive_message()
             split_msg = msg.split('|')
             if split_msg[1] == 'updatechallenges':
                 try:
                     challenges = json.loads(split_msg[2])
                     if challenges['challengesFrom'] is not None:
-                        username, challenge_format = next(iter(challenges['challengesFrom'].items()))
+                        user_to_challenge, challenge_format = next(iter(challenges['challengesFrom'].items()))
                         if challenge_format != battle_format:
-                            username = None
+                            user_to_challenge = None
                 except ValueError:
-                    username = None
+                    user_to_challenge = None
                 except StopIteration:
-                    username = None
-
-        message = ["/accept " + username]
+                    user_to_challenge = None
+        message = ["/accept " + user_to_challenge]
         await self.send_message('', message)
 
     async def search_for_match(self, battle_format, team):
