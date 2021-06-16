@@ -8,4 +8,4 @@ creds
 *.xlsx
 *.txt
 suspect_decisions.py
-teams/teams
+*/.spyproject/
