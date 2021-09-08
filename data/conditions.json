@@ -1,0 +1,25 @@
+{
+    "field":
+        ["electricterrain",
+        "grassyterrain",
+        "mistyterrain",
+        "psychicterrain"],
+    "weather":
+        ["raindance",
+        "sunnyday",
+        "sandstorm",
+        "hail"
+        ],
+    "volatile_status":
+        ["bind",
+        "taunt"
+        ],
+    "status":
+        ["brn",
+        "psn",
+        "par",
+        "tox",
+        "slp",
+        "frz"]
+
+}

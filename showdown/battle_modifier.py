@@ -225,7 +225,7 @@ def move(battle, split_msg):
         logger.debug("{} used two different moves - it cannot have a choice item".format(pkmn.name))
         pkmn.can_have_choice_item = False
         if pkmn.item in constants.CHOICE_ITEMS:
-            logger.warning("{} has a choice item, but used two different moves - setting it's item to UNKNOWN".format(pkmn.name))
+            #logger.warning("{} has a choice item, but used two different moves - setting it's item to UNKNOWN".format(pkmn.name))
             pkmn.item = constants.UNKNOWN_ITEM
 
     # if the opponent uses a boosting status move, they cannot have a choice item
@@ -927,6 +927,23 @@ def check_heavydutyboots(battle, msg_lines):
 
 def update_battle(battle, msg):
     msg_lines = msg.split('\n')
+    """
+    Edge case for Zoroark: If Zoroark is on the field, showdown server will return
+    the illusion pokemon (not zoroark) as the active one. We must now check if the current
+    active pokemon in battle.user is zoroark AND zoroark was the last pokemon used (except the first move)
+
+    """
+    #if battle.user.active.name == "zoroark" and battle.user.last_used_move.pokemon_name == "zoroark":
+    #    split_msg = msg_lines[4].split('|')
+    #    split_msg[2] = "p1a: Zoroark"; split_msg[3] = "Zoroark"
+    #    msg_lines[4] = '|'.join(split_msg)
+    #case of first move where zoroark is put out first and there is no last pokemon
+    if len(msg_lines) > 3:
+        if battle.user.active.name == "zoroark" and battle.user.last_used_move.move == "" and msg_lines[3] == "|start":
+            #hard coding that the fourth index is the player 1 (p1a) pokemon
+            split_msg = msg_lines[4].split('|')
+            split_msg[2] = "p1a: Zoroark"; split_msg[3] = "Zoroark"
+            msg_lines[4] = '|'.join(split_msg)
 
     action = None
     for i, line in enumerate(msg_lines):

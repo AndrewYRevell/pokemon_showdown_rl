@@ -162,7 +162,7 @@ class Battle(ABC):
                 for m in c[3]:
                     new_battle.opponent.active.add_move(m)
 
-                logger.debug("Possible set for opponent's {}:\t{} {} {} {} {}".format(battle_copy.opponent.active.name, c[0][0], c[0][1], c[1], c[2], all_moves))
+                #logger.debug("Possible set for opponent's {}:\t{} {} {} {} {}".format(battle_copy.opponent.active.name, c[0][0], c[0][1], c[1], c[2], all_moves))
                 battles.append(new_battle)
 
             new_battle.opponent.lock_moves()

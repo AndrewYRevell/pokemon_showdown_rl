@@ -8,10 +8,22 @@ def format_decision(battle, decision):
 
     if decision.startswith(constants.SWITCH_STRING + " "):
         switch_pokemon = decision.split("switch ")[-1]
-        for pkmn in battle.user.reserve:
+        for i in range(len(battle.user.reserve)):
+            pkmn = battle.user.reserve[i]
             if pkmn.name == switch_pokemon:
-                message = "/switch {}".format(pkmn.index)
-                break
+                try:
+                    message = "/switch {}".format(pkmn.index)
+                    break
+                except:
+                    #find indexes of all other pokemon and find the missing
+                    ind = []
+                    for n in range(len(battle.user.reserve)):
+                        p = battle.user.reserve[n]
+                        if n == i: continue
+                        ind.append(p.index)
+                    ind = sorted(set(range(2, 6 + 1)).difference(ind))[0] #find missing index
+                    message = "/switch {}".format(ind)
+                    break
         else:
             raise ValueError("Tried to switch to: {}".format(switch_pokemon))
     else:

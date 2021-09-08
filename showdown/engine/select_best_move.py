@@ -7,7 +7,7 @@ from .evaluate import evaluate
 from .find_state_instructions import get_all_state_instructions
 
 
-WON_BATTLE = 100
+
 
 
 def remove_guaranteed_opponent_moves(score_lookup):
