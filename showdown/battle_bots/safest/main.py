@@ -80,7 +80,7 @@ class BattleBot(Battle):
         #cp_callback = tf.keras.callbacks.ModelCheckpoint( filepath=checkpoint_filepath, save_weights_only=False, save_best_only=False)
         y = 0.95
         eps = 0.4
-        decay_factor = 0.999
+        decay_factor = 0.995
         state = self.create_state() #state = battle.create_state()
         mutator = StateMutator(state) # mutator = StateMutator(state)
         user_options, opponent_options = self.get_all_options() # user_options, opponent_options = battle.get_all_options()
