@@ -742,8 +742,10 @@ def update_reward(changes, reward_stat, table_pkmn, person = "self"):
     return reward_stat
 #%
 def determine_state_minimum(array, pokedex):
-    n_hp = 4
+    n_hp = 10
     hp_bins = list(np.linspace(0,1,n_hp+1))[1:]
+    hp_bins[-1] = 0.999 #changing last bin so that there is a state where we know a pkmn definitely has 100%hp (>99.9%)
+    hp_bins.extend([1.0])
     n_pkmn = len(pokedex.keys())
     pkmn = list(pokedex.keys())
     array
