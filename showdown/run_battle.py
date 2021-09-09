@@ -238,7 +238,7 @@ async def pokemon_battle(ps_websocket_client, pokemon_battle_type):
             model.save(model_name)
             print(f"\nFinal battle sum: {np.round(reward_sum, 2)}\n\n")
             data_analysis.save_or_get_episode_number("models/episodes.txt", mode = "save", episode = episode + 1)
-            print(f"Winner: {winner}, Number of Battles: {episode+1}, \nepsilon: {np.round(0.4*0.999**(episode+1),4)}")
+            print(f"Winner: {winner}, Number of Battles: {episode+1}, \nepsilon: {np.round(0.4*0.995**(episode+1),4)}")
             #cuda.select_device(0)
             #cuda.close()
             #data_mining
