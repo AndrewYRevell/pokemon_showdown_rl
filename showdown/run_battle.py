@@ -265,7 +265,7 @@ async def pokemon_battle(ps_websocket_client, pokemon_battle_type):
             return winner
         else:
             action_required = await async_update_battle(battle, msg);
-            #print(f"{action_required and not battle.wait}")
+            print(f"{action_required and not battle.wait}")
             if action_required and not battle.wait:
                 best_move, model, state_table, action, reward_sum = await async_pick_move(battle, model, state_table, action, reward_sum, episode, y, eps, decay_factor)
                 #model.save(model_name)

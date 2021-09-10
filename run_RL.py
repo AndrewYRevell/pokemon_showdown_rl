@@ -36,7 +36,7 @@ logger = logging.getLogger(__name__)
 
 from numba import cuda
 import time
-#%%
+#%
 
 import config
 from showdown.battle_bots.helpers import format_decision
@@ -89,7 +89,7 @@ def check_dictionaries_are_unmodified(original_pokedex, original_move_json):
     else:
         logger.debug("Pokedex JSON unmodified!")
     """
-
+#%%
 
 #config.run_count = 200
 async def showdown():

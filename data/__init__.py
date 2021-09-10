@@ -1,5 +1,7 @@
 import os
 import json
+import pandas as pd
+from showdown.engine.helpers import normalize_name
 #PWD = "/home/arevell/Documents/pokemon/showdown/data"
 PWD = os.path.dirname(os.path.abspath(__file__))
 
@@ -29,6 +31,17 @@ with open(conditions_json_location, 'r') as f:
 reward_table_json_location = os.path.join(PWD, 'reward_table.json')
 with open(reward_table_json_location, 'r') as f:
     reward_table = json.loads(f.read())
+
+items_json_location = os.path.join(PWD, 'items.json')
+with open(items_json_location, 'r') as f:
+    items = json.loads(f.read())
+items = items["items"]
+
+
+abilities_csv_location = os.path.join(PWD, 'abilities.csv')
+abilities = pd.read_csv(abilities_csv_location)
+abilities = [normalize_name(x) for x in abilities["name"] ]
+
 
 
 pokemon_sets = random_battle_sets
