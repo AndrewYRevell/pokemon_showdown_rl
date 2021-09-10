@@ -76,7 +76,7 @@ from scipy.ndimage.filters import gaussian_filter1d
 
 from scipy.interpolate import make_interp_spline, BSpline
 
-def data_analysis(metrics, save_figure_path = None, save_figure_bool = True, rolling_average = 40):
+def data_analysis(metrics, save_figure_path = None, save_figure_bool = True, rolling_average = 50):
     """
     save_figure_path = "data_analysis/plots/reward_sum_and_turns.pdf"
     metrics = save_or_get_metrics(path_to_data = "models/metrics.pickle" , mode = "get", renew = False)

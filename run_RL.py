@@ -116,6 +116,7 @@ async def showdown():
 
 
 
+
         winner = await pokemon_battle(ps_websocket_client, config.pokemon_mode)
         if winner == config.username:
             wins += 1

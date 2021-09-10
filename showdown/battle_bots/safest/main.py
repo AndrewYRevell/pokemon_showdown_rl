@@ -20,7 +20,8 @@ from data import reward_table
 import itertools
 import copy
 
-
+import matplotlib.pyplot as plt
+import seaborn as sns
 
 #for reinforcement learning
 import numpy as np
@@ -75,19 +76,20 @@ class BattleBot(Battle):
         super(BattleBot, self).__init__(*args, **kwargs)
 
 
-    def find_best_move(self, model, state_table, action, reward_sum, episode = 1):
+    def find_best_move(self, model, state_table, action, reward_sum, episode, y, eps, decay_factor):
         #checkpoint_filepath ='models/checkpoint'
         #cp_callback = tf.keras.callbacks.ModelCheckpoint( filepath=checkpoint_filepath, save_weights_only=False, save_best_only=False)
-        y = 0.95
-        eps = 0.4
-        decay_factor = 0.995
         state = self.create_state() #state = battle.create_state()
         mutator = StateMutator(state) # mutator = StateMutator(state)
         user_options, opponent_options = self.get_all_options() # user_options, opponent_options = battle.get_all_options()
 
         """
         print(model.optimizer.get_weights()[0])
+        print(K.eval(model.optimizer.iterations))
+        K.eval(model.optimizer.lr)
+        K.eval(model.optimizer.iterations)
 
+        a = model.optimizer.lr
 
         tf.keras.backend.set_value(model.optimizer.iterations, episode) #update optimizer iterations (which is the number of episodes, i.e. battles)
         print(model.optimizer.get_weights()[0])
@@ -133,7 +135,7 @@ class BattleBot(Battle):
             array = get_minimum_state_array(state, self, mutator, pokedex, all_move_json, types, conditions)
             current_state_table = get_state_table_for_rewards(state, self, mutator, pokedex, all_move_json, types, conditions)
             reward = calculate_reward_from_state_table(previous_state_table, current_state_table, reward_table)
-            print(f"                Turn {self.turn-1} reward sum:   {np.round(reward,2)}:   {action}")
+            print(f"                Turn {self.turn-1} reward sum:    {np.round(reward,2)}:   {action}")
             state_table = current_state_table
             s = determine_state_minimum(array, pokedex)
             #update neural network based on reward
@@ -146,10 +148,63 @@ class BattleBot(Battle):
             target = reward + y * np.max(model.predict(s.reshape(1,-1)))
             target_vec = model.predict(s_previous.reshape(1,-1))[0]
             target_vec[action_index] = target
-            model.fit(s_previous.reshape(1,-1), target_vec.reshape(-1, len(target_vec)), initial_epoch=episode, epochs=episode + 1, verbose=0)
+
+            """
+            # adjust learning rate through internal calculations given by initial_epoch, which seems to help anecdodally
+            set_learning_rate_to_default = "no"
+            if episode >=0 and episode <1000:
+                tau = int(episode/10) % (10)
+                if tau == 0 or tau == 1 or tau == 2: set_learning_rate_to_default = "yes"
+            elif episode >=1000:
+                if episode %1000 == 0: a = 30
+                if a >0: set_learning_rate_to_default = "yes"
+                a = a - 1
+            """
+            """
+            y = []
+            l = 10000
+            for episode in range(l):
+                e = episode
+                tau = int(e/10) % (10)
+                if tau == 0 or tau == 1:
+                    y.extend( [0]  )
+                else:
+                    y.extend( [e]  )
+
+            x = range(l)
+            y = np.array(y)
+            print(np.where( y == 0)[0]  )
+            sns.scatterplot(x = x, y = y)
+
+
+
+            set_learning_rate_to_default = "no"
+            y = []
+            for episode in range(l):
+                if episode >=0 and episode <1000:
+                    tau = int(episode/10) % (10)
+                    if tau == 0 or tau == 1: y.extend( [0]  )
+                    else: y.extend( [e]  )
+                elif episode >=1000:
+                    if episode %1000 == 0: a = 20
+                    if a >0: y.extend( [0]  )
+                    else: y.extend( [e]  )
+                    a = a - 1
+
+
+            print(f"                Episode: {episode}; Learning max: {set_learning_rate_to_default}; Epsilon: {np.round(eps,2)}")
+            if set_learning_rate_to_default == "yes":
+                model.fit(s_previous.reshape(1,-1), target_vec.reshape(-1, len(target_vec)), epochs=1, verbose=0)
+            else:
+                model.fit(s_previous.reshape(1,-1), target_vec.reshape(-1, len(target_vec)), initial_epoch=episode, epochs=episode + 1, verbose=0)
+            """
+
+            print(f"                Episode: {episode}; Epsilon: {np.round(eps,2)}")
+            model.fit(s_previous.reshape(1,-1), target_vec.reshape(-1, len(target_vec)), verbose=0)
             reward_sum += reward
-        eps_new = eps * (decay_factor**episode)
-        if np.random.random() < eps_new:
+
+
+        if np.random.random() < eps:
             a = np.random.randint(0, len(user_options))
             action = user_options[a]
         else:
@@ -176,7 +231,7 @@ class BattleBot(Battle):
             model = None
         return model, state_table, action, reward_sum
 
-    def battle_win_or_lose_reward(self, winner, model, state_table, action, reward_sum ):
+    def battle_win_or_lose_reward(self, winner, model, state_table, action, reward_sum, episode, y ):
         """
         previous_state_table = state_table
         state = battle.create_state()
@@ -185,7 +240,7 @@ class BattleBot(Battle):
         array = get_minimum_state_array(state, battle, mutator, pokedex, all_move_json, types, conditions)
 
         """
-        y = 0.95
+
         if winner == self.opponent.account_name:
             person = "opponent"
             multiplier = 1
@@ -207,7 +262,25 @@ class BattleBot(Battle):
         target = reward + y * np.max(model.predict(s.reshape(1,-1)))
         target_vec = model.predict(s_previous.reshape(1,-1))[0]
         target_vec[action_index] = target
-        model.fit(s_previous.reshape(1,-1), target_vec.reshape(-1, len(target_vec)), epochs=1, verbose=0)
+        """
+        # adjust learning rate through internal calculations given by initial_epoch, which seems to help anecdodally
+        set_learning_rate_to_default = "no"
+        if episode >=0 and episode <1000:
+            tau = int(episode/10) % (10)
+            if tau == 0 or tau == 1 or tau == 2: set_learning_rate_to_default = "yes"
+        elif episode >=1000:
+            if episode %1000 == 0: a = 30
+            if a >0: set_learning_rate_to_default = "yes"
+            a = a - 1
+
+        print(f"                Episode: {episode}; Learning max: {set_learning_rate_to_default}; Epsilon: {np.round(eps,2)}")
+        if set_learning_rate_to_default == "yes":
+            model.fit(s_previous.reshape(1,-1), target_vec.reshape(-1, len(target_vec)), epochs=1, verbose=0)
+        else:
+            model.fit(s_previous.reshape(1,-1), target_vec.reshape(-1, len(target_vec)), initial_epoch=episode, epochs=episode + 1, verbose=0)
+        """
+
+        model.fit(s_previous.reshape(1,-1), target_vec.reshape(-1, len(target_vec)), verbose=0)
         reward_sum += reward
         turns = self.turn
         return model, reward_sum, turns
@@ -605,6 +678,33 @@ def align_state_tables(previous_state_table, current_state_table):
     ids = previous_pokemon[:,0]
     #separating into two parts: self and opponenet (in case both you and opponent have same pokemon, and thus pkmn ids)
 
+    #edge case where urshifu appears for the first time and the name changes to urshifurapidstrike or something
+    #edge case where pokemon changes for, and thus pokedex ID (like dynanimax, or urshifu to urshifurapidstrike)
+    startv = [0, 6]
+    endv =  [6, 12]
+    for x in range(len(startv)):
+        start = startv[x]
+        end = endv[x]
+        for i in np.arange(0,6):
+            #check if any same pokedex number (the actual pokedex number, not the ID or index)
+            keys = []
+            for k in range(len(  current_pokemon[start:end,0]  )):
+                keys.extend(  [list(pokedex.keys())[int(current_pokemon[start:end,0][k])]  ] )
+
+            previous_key = list(pokedex.keys())[int(ids[start:end][i] )   ]
+            if "num" in pokedex[previous_key].keys():
+                previous_key_num = pokedex[previous_key]["num"]
+                current_num = []
+                for k in range(len(keys)):
+                    if "num" in pokedex[keys[k]].keys():
+                        current_num.extend(  [ pokedex[keys[k]]["num"]  ] )
+                    else:
+                        current_num.extend( [0]  )
+                current_index = np.where(previous_key_num == np.array(current_num))[0][0]
+                current_index
+                ids[start:end][i] = current_pokemon[start:end,0][current_index]
+    table_pkmn[:,0,0] = ids
+
     startv = [0, 6]
     endv =  [6, 12]
     for x in range(len(startv)):
@@ -667,8 +767,8 @@ def calculate_reward_from_state_table(previous_state_table, current_state_table,
     mutator = StateMutator(state)
     user_options, opponent_options = b.get_all_options()
 
-    previous_state_table = get_state_table_for_rewards(state, battle, mutator, pokedex, all_move_json, types, conditions)
-    current_state_table = get_state_table_for_rewards(state, battle, mutator, pokedex, all_move_json, types, conditions)
+    #previous_state_table = get_state_table_for_rewards(state, battle, mutator, pokedex, all_move_json, types, conditions)
+    #current_state_table = get_state_table_for_rewards(state, battle, mutator, pokedex, all_move_json, types, conditions)
     """
     table_pkmn = align_state_tables(previous_state_table, current_state_table)
     table_side_self = np.vstack([previous_state_table[1], current_state_table[1] ])
@@ -691,16 +791,16 @@ def calculate_reward_from_state_table(previous_state_table, current_state_table,
 
     #rewards from self
     reward_self = update_reward(self_changes, reward_self, table_pkmn, person = "self")
-    print(f"                self reward:         {np.round(reward_self,2)}")
+    print(f"                Reward from self:      {np.round(reward_self,2)}")
     reward_opponent = update_reward(opponent_changes, reward_opponent, table_pkmn, person = "opponent")
-    print(f"                opponent reward:     {np.round(reward_opponent,2)}")
+    print(f"                Reward from opponent:  {np.round(reward_opponent,2)}")
     reward = reward_self + reward_opponent
     return reward
 
 
 
 def update_reward(changes, reward_stat, table_pkmn, person = "self"):
-
+    #changes = self_changes; reward_stat =0
     pokemon_faint, all_fainted, pokemon_hp_change, pokemon_status_change, side_conditions_change = changes
     if person == "self":
         start = 0
@@ -735,10 +835,19 @@ def update_reward(changes, reward_stat, table_pkmn, person = "self"):
             reward_stat += reward_table["status"][person][stat_name] * -multiplier *10
     if any(side_conditions_change[start:end] != 0):
         #figure out the status change
-        ind = np.where(side_conditions_change[start:end] != 0)[0]
+
+        #if side conditions > 0, then they are NEW side consitions. Hence spikes are present and you get a negative reward
+        ind = np.where(side_conditions_change[start:end] > 0)[0]
         for i in range(len(ind)):
             side_condition_name = list(reward_table["side_conditions"][person].keys())[ind[i]]
             reward_stat += reward_table["side_conditions"][person][side_condition_name]* multiplier
+
+
+        #if side conditions < 0, then they are side consitions that were removed. Hence spikes are removed due to defog, you get a positive reward
+        ind = np.where(side_conditions_change[start:end] < 0)[0]
+        for i in range(len(ind)):
+            side_condition_name = list(reward_table["side_conditions"][person].keys())[ind[i]]
+            reward_stat += reward_table["side_conditions"][person][side_condition_name]* multiplier * -1
     return reward_stat
 #%
 def determine_state_minimum(array, pokedex):
@@ -746,6 +855,7 @@ def determine_state_minimum(array, pokedex):
     hp_bins = list(np.linspace(0,1,n_hp+1))[1:]
     hp_bins[-1] = 0.999 #changing last bin so that there is a state where we know a pkmn definitely has 100%hp (>99.9%)
     hp_bins.extend([1.0])
+    n_hp = len(hp_bins)
     n_pkmn = len(pokedex.keys())
     pkmn = list(pokedex.keys())
     array
@@ -811,6 +921,7 @@ def build_model(s, pokedex, all_move_json):
 
     model = Sequential()
     model.add(InputLayer(batch_input_shape=(1, input_len)))
+    """
     model.add(Dense(100, activation='relu'))
     model.add(Dropout(0.2))
     model.add(Dense(100, activation='relu'))
@@ -820,8 +931,18 @@ def build_model(s, pokedex, all_move_json):
     model.add(Dense(100, activation='relu'))
     model.add(Dropout(0.2))
     model.add(Dense(100, activation='relu'))
+    """
+    model.add(Dense(32, activation='relu'))
+    model.add(Dropout(0.2))
+    model.add(Dense(32, activation='relu'))
+    model.add(Dropout(0.2))
+    model.add(Dense(32, activation='relu'))
+    model.add(Dropout(0.2))
+
+
     model.add(Dense(number_of_actions, activation='sigmoid'))
-    model.compile(loss='mse', optimizer='adam', metrics=['mae'])
+    optimizer = keras.optimizers.Adam( beta_1 = 0.99, learning_rate = 0.05)
+    model.compile(loss='mse', optimizer=optimizer, metrics=['mae'])
     print(model.summary())
     return model
 

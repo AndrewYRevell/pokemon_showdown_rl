@@ -44,12 +44,12 @@ def battle_is_finished(battle_tag, msg):
     return msg.startswith(">{}".format(battle_tag)) and constants.WIN_STRING in msg and constants.CHAT_STRING not in msg
 
 
-async def async_pick_move(battle, model, state_table, action, reward_sum, episode):
+async def async_pick_move(battle, model, state_table, action, reward_sum, episode, y, eps, decay_factor):
     battle_copy = deepcopy(battle)
     if battle_copy.request_json:
         battle_copy.user.from_json(battle_copy.request_json)
 
-    best_move, model, new_state_table, new_action, reward_sum = battle_copy.find_best_move(model, state_table, action, reward_sum, episode)
+    best_move, model, new_state_table, new_action, reward_sum = battle_copy.find_best_move(model, state_table, action, reward_sum, episode, y, eps, decay_factor)
     #loop = asyncio.get_event_loop()
     #with concurrent.futures.ThreadPoolExecutor() as pool:
     #    best_move, model = await loop.run_in_executor(
@@ -89,6 +89,7 @@ async def handle_team_preview(battle, ps_websocket_client, build_model_bool):
     else:
         model, state_table, action, reward_sum = battle_copy.initialize_battle(build_model_bool)
         first_pokemon_sent_out = random.randint(1, 6)
+        first_pokemon_sent_out = 3
         best_move = f'/switch {first_pokemon_sent_out}'
         size_of_team = len(battle.user.reserve) + 1
         team_list_indexes = list(range(1, size_of_team))
@@ -208,7 +209,7 @@ async def start_battle(ps_websocket_client, pokemon_battle_type, build_model_boo
         battle, model, state_table, action, reward_sum = await start_standard_battle(ps_websocket_client, pokemon_battle_type, build_model_bool)
 
     await ps_websocket_client.send_message(battle.battle_tag, [config.greeting_message])
-    await ps_websocket_client.send_message(battle.battle_tag, ['/timer on'])
+    await ps_websocket_client.send_message(battle.battle_tag, ['/timer off'])
 
     return battle, model, state_table, action, reward_sum
 
@@ -225,6 +226,17 @@ async def pokemon_battle(ps_websocket_client, pokemon_battle_type):
         model = load_model(model_name)
         episode = data_analysis.save_or_get_episode_number("models/episodes.txt", mode = "get")
         print(f"model already exists. Number of battles played = {episode}")
+    y = 0.95
+    eps_start = 0.3
+    decay_factor = 0.995
+    eps =  eps_start * (decay_factor**episode)
+    if eps >0.1:
+        if np.random.random() < 0.1: # % chance that eps will be very low
+            eps = 0.02
+    elif eps <0.1:
+        if np.random.random() < 0.05:
+            eps = 0.1
+    print(f"Epsilon: {eps}")
     while True:
         msg = await ps_websocket_client.receive_message()
         if battle_is_finished(battle.battle_tag, msg):
@@ -234,11 +246,11 @@ async def pokemon_battle(ps_websocket_client, pokemon_battle_type):
 
             action_required = await async_update_battle(battle, msg)
             winner = msg.split(constants.WIN_STRING)[-1].split('\n')[0].strip()
-            model, reward_sum, turns = battle.battle_win_or_lose_reward(winner, model, state_table, action, reward_sum )
+            model, reward_sum, turns = battle.battle_win_or_lose_reward(winner, model, state_table, action, reward_sum , episode, y)
             model.save(model_name)
             print(f"\nFinal battle sum: {np.round(reward_sum, 2)}\n\n")
             data_analysis.save_or_get_episode_number("models/episodes.txt", mode = "save", episode = episode + 1)
-            print(f"Winner: {winner}, Number of Battles: {episode+1}, \nepsilon: {np.round(0.4*0.995**(episode+1),4)}")
+            print(f"Winner: {winner}, Number of Battles: {episode+1}, \nepsilon: {np.round(eps,4)}")
             #cuda.select_device(0)
             #cuda.close()
             #data_mining
@@ -255,7 +267,7 @@ async def pokemon_battle(ps_websocket_client, pokemon_battle_type):
             action_required = await async_update_battle(battle, msg);
             #print(f"{action_required and not battle.wait}")
             if action_required and not battle.wait:
-                best_move, model, state_table, action, reward_sum = await async_pick_move(battle, model, state_table, action, reward_sum, episode)
+                best_move, model, state_table, action, reward_sum = await async_pick_move(battle, model, state_table, action, reward_sum, episode, y, eps, decay_factor)
                 #model.save(model_name)
                 print(f"sum= {np.round(reward_sum,1)}")
                 await ps_websocket_client.send_message(battle.battle_tag, best_move)
