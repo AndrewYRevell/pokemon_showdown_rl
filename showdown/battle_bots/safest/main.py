@@ -81,7 +81,7 @@ class BattleBot(Battle):
         super(BattleBot, self).__init__(*args, **kwargs)
 
 
-    def find_best_move(self, model, state_table, action, reward_sum, s_memory,  episode, y, eps, decay_factor):
+    def find_best_move(self, model, model_team_preview, state_table, action,action_team_preview, reward_sum, s_memory, s_team_preview, episode, y, eps, decay_factor):
         #checkpoint_filepath ='models/checkpoint'
         #cp_callback = tf.keras.callbacks.ModelCheckpoint( filepath=checkpoint_filepath, save_weights_only=False, save_best_only=False)
 
@@ -89,7 +89,7 @@ class BattleBot(Battle):
         state = self.create_state() #state = battle.create_state() #state = battle_copy.create_state()
         mutator = StateMutator(state) # mutator = StateMutator(state)
         user_options, opponent_options = self.get_all_options() # user_options, opponent_options = battle.get_all_options() # user_options, opponent_options = battle_copy.get_all_options()
-        print(f"                Episode: {episode}; Epsilon: {np.round(eps,2)}")
+        print(f"                Episode: {episode}; Epsilon:   {np.round(eps,2)}")
         """
         print(model.optimizer.get_weights()[0])
         print(K.eval(model.optimizer.iterations))
@@ -154,14 +154,24 @@ class BattleBot(Battle):
 
 
             s_5 = np.concatenate([s[4], s[5] ], axis = 0)
+            s_5_previous = np.concatenate([previous_s[4], previous_s[5] ], axis = 0)
             target = reward + y * np.max(model.predict(  [ s[0].reshape(1,-1), s[1].reshape(1,-1), s[2].reshape(1,-1), s[3].reshape(1,-1), s_5.reshape(1,-1) ]  ))
-            target_vec =model.predict(  [ s[0].reshape(1,-1), s[1].reshape(1,-1), s[2].reshape(1,-1), s[3].reshape(1,-1), s_5.reshape(1,-1) ]  )[0]
+            target_vec =model.predict(  [ previous_s[0].reshape(1,-1), previous_s[1].reshape(1,-1), previous_s[2].reshape(1,-1), previous_s[3].reshape(1,-1), s_5_previous.reshape(1,-1) ]  )[0]
             target_vec[action_index] = target
 
 
-            model.fit([ s[0].reshape(1,-1), s[1].reshape(1,-1), s[2].reshape(1,-1), s[3].reshape(1,-1), s_5.reshape(1,-1) ] , target_vec.reshape(-1, len(target_vec)), verbose=0)
+            model.fit([ previous_s[0].reshape(1,-1), previous_s[1].reshape(1,-1), previous_s[2].reshape(1,-1), previous_s[3].reshape(1,-1), s_5_previous.reshape(1,-1) ] , target_vec.reshape(-1, len(target_vec)), verbose=0)
             reward_sum += reward
 
+            #calculate reward for team preview selection:
+            if self.turn == 2:
+                action_index_team_preview = determine_previous_action_indexes_team_preview(action_team_preview, pokedex)
+                old_target =  np.max(model_team_preview.predict(  [ s_team_preview[0].reshape(1,-1), s_team_preview[1].reshape(1,-1) ]  )  )
+                target = reward + y * np.max(model_team_preview.predict(  [ s_team_preview[0].reshape(1,-1), s_team_preview[1].reshape(1,-1) ]  )  )
+                target_vec =model_team_preview.predict(  [ s_team_preview[0].reshape(1,-1), s_team_preview[1].reshape(1,-1) ]   )[0]
+                target_vec[action_index_team_preview] = target
+                model_team_preview.fit([ s_team_preview[0].reshape(1,-1), s_team_preview[1].reshape(1,-1) ] , target_vec.reshape(-1, len(target_vec)), verbose=0)
+                print(f"                Team preview move: {action_team_preview}, Q: {int(old_target*1000)/1000}, New Q: {np.round(target,3)} ")
 
         if np.random.random() < eps:
             a = np.random.randint(0, len(user_options))
@@ -187,12 +197,19 @@ class BattleBot(Battle):
         reward_sum = 0
 
         s_memory = [s,s,s,s,s] #remembers last 5 s's
-
+        s_team_preview = get_team_preview_state_array(state, self, mutator, pokedex, all_move_json, types, conditions, abilities, items)
         if build_model_bool:
             model = build_model(s, pokedex, all_move_json)
+            model_team_preview = build_model_team_preview(s_team_preview, pokedex, all_move_json)
         else:
             model = None
-        return model, state_table, action, reward_sum, s_memory
+            model_team_preview = None
+        return model, model_team_preview, state_table, action, reward_sum, s_memory, s_team_preview
+
+    def team_preview_action(self, model_team_preview, s_team_preview):
+        action_team_preview, action_ind =  pick_action_RL_team_preview(model_team_preview, s_team_preview, self, pokedex)
+        #action = pick_action_RL_team_preview(model_team_preview, battle_copy, pokedex)
+        return action_team_preview, action_ind
 
     def battle_win_or_lose_reward(self, winner, model, state_table, action, reward_sum, s_memory, episode, y ):
         """
@@ -232,40 +249,16 @@ class BattleBot(Battle):
 
         action_index = determine_previous_action_indexes(action_previous, pokedex, all_move_json)
         s_5 = np.concatenate([s[4], s[5] ], axis = 0)
+        s_5_previous = np.concatenate([previous_s[4], previous_s[5] ], axis = 0)
         target = reward + y * np.max(model.predict(  [ s[0].reshape(1,-1), s[1].reshape(1,-1), s[2].reshape(1,-1), s[3].reshape(1,-1), s_5.reshape(1,-1) ]  ))
-        target_vec =model.predict(  [ s[0].reshape(1,-1), s[1].reshape(1,-1), s[2].reshape(1,-1), s[3].reshape(1,-1), s_5.reshape(1,-1) ]  )[0]
+        target_vec =model.predict(  [ previous_s[0].reshape(1,-1), previous_s[1].reshape(1,-1), previous_s[2].reshape(1,-1), previous_s[3].reshape(1,-1), s_5_previous.reshape(1,-1) ]  )[0]
         target_vec[action_index] = target
-        """
-        # adjust learning rate through internal calculations given by initial_epoch, which seems to help anecdodally
-        set_learning_rate_to_default = "no"
-        if episode >=0 and episode <1000:
-            tau = int(episode/10) % (10)
-            if tau == 0 or tau == 1 or tau == 2: set_learning_rate_to_default = "yes"
-        elif episode >=1000:
-            if episode %1000 == 0: a = 30
-            if a >0: set_learning_rate_to_default = "yes"
-            a = a - 1
 
-        print(f"                Episode: {episode}; Learning max: {set_learning_rate_to_default}; Epsilon: {np.round(eps,2)}")
-        if set_learning_rate_to_default == "yes":
-            model.fit(s_previous.reshape(1,-1), target_vec.reshape(-1, len(target_vec)), epochs=1, verbose=0)
-        else:
-            model.fit(s_previous.reshape(1,-1), target_vec.reshape(-1, len(target_vec)), initial_epoch=episode, epochs=episode + 1, verbose=0)
-        """
 
-        model.fit([ s[0].reshape(1,-1), s[1].reshape(1,-1), s[2].reshape(1,-1), s[3].reshape(1,-1), s_5.reshape(1,-1) ] , target_vec.reshape(-1, len(target_vec)), verbose=0)
+        model.fit([ previous_s[0].reshape(1,-1), previous_s[1].reshape(1,-1), previous_s[2].reshape(1,-1), previous_s[3].reshape(1,-1), s_5_previous.reshape(1,-1) ] , target_vec.reshape(-1, len(target_vec)), verbose=0)
         reward_sum += reward
         turns = self.turn
         return model, reward_sum, turns
-"""
-b = battle
-state = b.create_state()
-mutator = StateMutator(state)
-user_options, opponent_options = b.get_all_options()
-
-
-format_decision(battle, safest_move)
-"""
 
 
 #%
@@ -788,6 +781,68 @@ def get_state_array(state, battle, mutator, pokedex, all_move_json, types, condi
     return s
 
 
+def get_team_preview_state_array(state, battle, mutator, pokedex, all_move_json, types, conditions, abilities, items):
+    new_state_dict = copy.deepcopy(eval(str(state)))
+    #get reserve df
+    df_reserve_self = pd.DataFrame(columns =[ "name", "id", "ability", "type", "item",
+                                       "move_1", "move_2",  "move_3", "move_4", ])
+    df_reserve_opponent = pd.DataFrame(columns =[ "name", "id",  "type"])
+
+    pd.DataFrame(columns =[ "name", "id", "hp", "ability", "type", "item", "status", "volatile", "attack_boost", "defense_boost", "special_attack_boost",
+                                           "special_defense_boost" ,"speed_boost", "accuracy_boost", "evasion_boost",
+                                           "move_1", "move_1_disabled", "move_1_pp", "move_2", "move_2_disabled" , "move_2_pp", "move_3", "move_3_disabled", "move_3_pp", "move_4", "move_4_disabled" ,"move_4_pp"])
+
+
+    remove_columns = ["hp", "status", "volatile", "attack_boost", "defense_boost", "special_attack_boost",
+                                           "special_defense_boost" ,"speed_boost", "accuracy_boost", "evasion_boost", "move_1_pp","move_2_pp","move_3_pp", "move_4_pp",
+                                           "move_1_disabled",  "move_2_disabled" ,"move_3_disabled", "move_4_disabled" ]
+
+    reserve_keys_self = list(new_state_dict["self"]["reserve"].keys())
+    reserve_keys_opponent = list(new_state_dict["opponent"]["reserve"].keys())
+    for r in range(6):
+       if r < len(reserve_keys_self):
+           d = get_pkmn_status_df(new_state_dict["self"]["reserve"][reserve_keys_self[r]], pokedex, all_move_json, abilities, types, items, conditions)
+           d = d.drop(remove_columns, axis = 1)
+       else: d =  dict(name = "NA", id = 0, ability = 0, type = 0, item = 0,
+                                  move_1 = 0, move_2 = 0,  move_3 = 0, move_4 = 0)
+       df_reserve_self = df_reserve_self.append(d, ignore_index=True)
+
+    remove_columns = ["hp",  "ability", "item", "status",    "volatile", "attack_boost", "defense_boost", "special_attack_boost",
+                                           "special_defense_boost" ,"speed_boost", "accuracy_boost", "evasion_boost",
+                                           "move_1", "move_1_disabled", "move_1_pp", "move_2", "move_2_disabled" , "move_2_pp", "move_3", "move_3_disabled", "move_3_pp", "move_4", "move_4_disabled" ,"move_4_pp"]
+
+    for r in range(6):
+       if r < len(reserve_keys_opponent):
+           d = get_pkmn_status_df(new_state_dict["opponent"]["reserve"][reserve_keys_opponent[r]], pokedex, all_move_json, abilities, types, items, conditions)
+           d = d.drop(remove_columns, axis = 1)
+       else: d =  dict(name = "NA", id = 0, type = 0)
+       df_reserve_opponent = df_reserve_opponent.append(d, ignore_index=True)
+
+
+    #convert to one-hot-encoding
+    categories = ["id", "ability", "type", "item", "move_1", "move_2", "move_3", "move_4"]
+    names = ["id", "ability", "type", "item", "move", "move", "move", "move",]
+
+
+    for a in range(6):
+        for l in range(len(categories)):
+            if a == 0 and l == 0:
+                array_reserve_self = one_hot( names[l], df_reserve_self[categories[l] ][a], pokedex, all_move_json, types, conditions, abilities, items)
+            else:
+                array_reserve_self = np.concatenate([array_reserve_self, one_hot(names[l], df_reserve_self[categories[l] ][a], pokedex, all_move_json, types, conditions, abilities, items) ], axis = 0)
+
+    categories = ["id", "type"]
+    names = ["id", "type"]
+
+    for a in range(6):
+        for l in range(len(categories)):
+            if a == 0 and l == 0:
+                array_reserve_opponent = one_hot( names[l], df_reserve_opponent[categories[l] ][a], pokedex, all_move_json, types, conditions, abilities, items)
+            else:
+                array_reserve_opponent = np.concatenate([array_reserve_opponent, one_hot(names[l], df_reserve_opponent[categories[l] ][a], pokedex, all_move_json, types, conditions, abilities, items) ], axis = 0)
+
+    s_team_preview = [array_reserve_self, array_reserve_opponent]
+    return s_team_preview
 
 def get_minimum_state_array(state, battle, mutator, pokedex, all_move_json, types, conditions, initialize = False):
     """
@@ -1146,6 +1201,24 @@ def determine_next_action_indexes(battle, pokedex, all_move_json):
                 possible_state_index_to_swtich.append(pkmn_and_moves.index(n))
     return possible_state_index_to_swtich
 
+def determine_next_action_index_team_preview(battle, pokedex):
+    user_options, opponent_options = battle.get_all_options()
+    pkmn = list(pokedex.keys())
+    possible_pokemon_to_switch = []
+
+    pkmn_and_moves = pkmn
+    possible_state_index_to_swtich = []
+    for i, n in enumerate(user_options):
+        if "switch" in n and n != "voltswitch" and n != "allyswitch" and n != "switcheroo":
+            p = n.split('switch ')[1]
+            if p in pkmn_and_moves:
+                possible_state_index_to_swtich.append(pkmn_and_moves.index(p))
+    return possible_state_index_to_swtich
+
+
+
+
+
 def determine_previous_action_indexes(action_previous, pokedex, all_move_json):
     pkmn = list(pokedex.keys())
     moves = list(all_move_json.keys())
@@ -1161,6 +1234,18 @@ def determine_previous_action_indexes(action_previous, pokedex, all_move_json):
     else:
         if action_previous in pkmn_and_moves:
             possible_state_index_to_swtich.append(pkmn_and_moves.index(action_previous))
+    return possible_state_index_to_swtich
+
+def determine_previous_action_indexes_team_preview(action_previous, pokedex):
+    pkmn = list(pokedex.keys())
+    possible_pokemon_to_switch = []
+    pkmn_and_moves = pkmn
+    possible_state_index_to_swtich = []
+
+    if "switch" in action_previous and action_previous != "voltswitch" and action_previous != "allyswitch" and action_previous != "switcheroo":
+        p = action_previous.split('switch ')[1]
+        if p in pkmn_and_moves:
+            possible_state_index_to_swtich.append(pkmn_and_moves.index(p))
     return possible_state_index_to_swtich
 
 
@@ -1213,8 +1298,32 @@ def build_model(s , pokedex, all_move_json):
     print(model.summary())
     return model
 
+def build_model_team_preview(s_team_preview, pokedex, all_move_json):
+    s_reserve_self, s_reserve_opponent = s_team_preview
+    number_of_actions = len(pokedex)
 
+    optimizer = keras.optimizers.Adam( beta_1 = 0.99, learning_rate = 0.05)
 
+    inputA = Input(shape = (  len(s_reserve_self), )   )
+    inputB = Input(shape = (  len(s_reserve_opponent), )   )
+
+    A = Dense(16, activation='relu')(inputA)
+    A = Dropout(0.2)(A)
+    A = Model(inputs=inputA, outputs=A)
+
+    B = Dense(16, activation='relu')(inputB)
+    B = Dropout(0.2)(B)
+    B = Model(inputs=inputB, outputs=B)
+    combined = concatenate([A.output, B.output])
+
+    Z = Dense(32, activation="relu")(combined)
+    Z = Dense(number_of_actions, activation="sigmoid")(Z)
+
+    model = Model(inputs=[A.input, B.input], outputs=Z)
+
+    model.compile(loss='mse', optimizer=optimizer, metrics=['mae'])
+    print(model.summary())
+    return model
 
 
 def pick_action_RL(model, state, battle, mutator, pokedex, all_move_json, types, conditions):
@@ -1227,6 +1336,20 @@ def pick_action_RL(model, state, battle, mutator, pokedex, all_move_json, types,
     user_options, opponent_options = battle.get_all_options()
     action = user_options[action_ind]
     return action
+
+
+
+def pick_action_RL_team_preview(model_team_preview, s_team_preview,  battle, pokedex):
+
+    Q = model_team_preview.predict(  [ s_team_preview[0].reshape(1,-1), s_team_preview[1].reshape(1,-1)]  )
+
+    actions_possible = determine_next_action_index_team_preview(battle, pokedex)
+    #actions_possible = determine_next_action_index_team_preview(battle_copy, pokedex)
+    #user_options, opponent_options = battle_copy.get_all_options()
+    action_ind = np.argmax(Q[0,actions_possible])
+    user_options, opponent_options = battle.get_all_options()
+    action = user_options[action_ind]
+    return action, action_ind+1
 
 
 
