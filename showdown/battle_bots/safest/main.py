@@ -96,17 +96,6 @@ class BattleBot(Battle):
         K.eval(model.optimizer.lr)
         K.eval(model.optimizer.iterations)
 
-        a = model.optimizer.lr
-
-        tf.keras.backend.set_value(model.optimizer.iterations, episode) #update optimizer iterations (which is the number of episodes, i.e. battles)
-        print(model.optimizer.get_weights()[0])
-        K.eval(model.optimizer.weights)
-
-        print(model.summary())
-
-        model.optimizers
-        tf.keras.optimizers.Optimizer.get_weights()
-        #print(f"user options: {user_options}")
         """
         if self.turn == 1: #battle.turn == 1
             """
@@ -168,56 +157,6 @@ class BattleBot(Battle):
             target = reward + y * np.max(model.predict(  [ s[0].reshape(1,-1), s[1].reshape(1,-1), s[2].reshape(1,-1), s[3].reshape(1,-1), s_5.reshape(1,-1) ]  ))
             target_vec =model.predict(  [ s[0].reshape(1,-1), s[1].reshape(1,-1), s[2].reshape(1,-1), s[3].reshape(1,-1), s_5.reshape(1,-1) ]  )[0]
             target_vec[action_index] = target
-
-            """
-            # adjust learning rate through internal calculations given by initial_epoch, which seems to help anecdodally
-            set_learning_rate_to_default = "no"
-            if episode >=0 and episode <1000:
-                tau = int(episode/10) % (10)
-                if tau == 0 or tau == 1 or tau == 2: set_learning_rate_to_default = "yes"
-            elif episode >=1000:
-                if episode %1000 == 0: a = 30
-                if a >0: set_learning_rate_to_default = "yes"
-                a = a - 1
-            """
-            """
-            y = []
-            l = 10000
-            for episode in range(l):
-                e = episode
-                tau = int(e/10) % (10)
-                if tau == 0 or tau == 1:
-                    y.extend( [0]  )
-                else:
-                    y.extend( [e]  )
-
-            x = range(l)
-            y = np.array(y)
-            print(np.where( y == 0)[0]  )
-            sns.scatterplot(x = x, y = y)
-
-
-
-            set_learning_rate_to_default = "no"
-            y = []
-            for episode in range(l):
-                if episode >=0 and episode <1000:
-                    tau = int(episode/10) % (10)
-                    if tau == 0 or tau == 1: y.extend( [0]  )
-                    else: y.extend( [e]  )
-                elif episode >=1000:
-                    if episode %1000 == 0: a = 20
-                    if a >0: y.extend( [0]  )
-                    else: y.extend( [e]  )
-                    a = a - 1
-
-
-            print(f"                Episode: {episode}; Learning max: {set_learning_rate_to_default}; Epsilon: {np.round(eps,2)}")
-            if set_learning_rate_to_default == "yes":
-                model.fit(s_previous.reshape(1,-1), target_vec.reshape(-1, len(target_vec)), epochs=1, verbose=0)
-            else:
-                model.fit(s_previous.reshape(1,-1), target_vec.reshape(-1, len(target_vec)), initial_epoch=episode, epochs=episode + 1, verbose=0)
-            """
 
 
             model.fit([ s[0].reshape(1,-1), s[1].reshape(1,-1), s[2].reshape(1,-1), s[3].reshape(1,-1), s_5.reshape(1,-1) ] , target_vec.reshape(-1, len(target_vec)), verbose=0)
