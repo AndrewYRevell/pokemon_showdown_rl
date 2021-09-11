@@ -227,7 +227,7 @@ async def pokemon_battle(ps_websocket_client, pokemon_battle_type):
         episode = data_analysis.save_or_get_episode_number("models/episodes.txt", mode = "get")
         print(f"model already exists. Number of battles played = {episode}")
     y = 0.95
-    eps_start = 0.3
+    eps_start = 0.05
     decay_factor = 0.995
     eps =  eps_start * (decay_factor**episode)
     if eps >0.1:
@@ -235,7 +235,7 @@ async def pokemon_battle(ps_websocket_client, pokemon_battle_type):
             eps = 0.02
     elif eps <0.1:
         if np.random.random() < 0.05:
-            eps = 0.1
+            eps = 0.3
     print(f"Epsilon: {eps}")
     while True:
         msg = await ps_websocket_client.receive_message()
@@ -265,7 +265,7 @@ async def pokemon_battle(ps_websocket_client, pokemon_battle_type):
             return winner
         else:
             action_required = await async_update_battle(battle, msg);
-            print(f"{action_required and not battle.wait}")
+            #print(f"{action_required and not battle.wait}")
             if action_required and not battle.wait:
                 best_move, model, state_table, action, reward_sum, s_memory = await async_pick_move(battle, model, state_table, action, reward_sum, s_memory, episode, y, eps, decay_factor)
                 #model.save(model_name)

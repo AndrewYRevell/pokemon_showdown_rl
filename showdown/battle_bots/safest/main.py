@@ -89,7 +89,7 @@ class BattleBot(Battle):
         state = self.create_state() #state = battle.create_state() #state = battle_copy.create_state()
         mutator = StateMutator(state) # mutator = StateMutator(state)
         user_options, opponent_options = self.get_all_options() # user_options, opponent_options = battle.get_all_options() # user_options, opponent_options = battle_copy.get_all_options()
-
+        print(f"                Episode: {episode}; Epsilon: {np.round(eps,2)}")
         """
         print(model.optimizer.get_weights()[0])
         print(K.eval(model.optimizer.iterations))
@@ -219,7 +219,7 @@ class BattleBot(Battle):
                 model.fit(s_previous.reshape(1,-1), target_vec.reshape(-1, len(target_vec)), initial_epoch=episode, epochs=episode + 1, verbose=0)
             """
 
-            print(f"                Episode: {episode}; Epsilon: {np.round(eps,2)}")
+
             model.fit([ s[0].reshape(1,-1), s[1].reshape(1,-1), s[2].reshape(1,-1), s[3].reshape(1,-1), s_5.reshape(1,-1) ] , target_vec.reshape(-1, len(target_vec)), verbose=0)
             reward_sum += reward
 
@@ -1246,27 +1246,21 @@ def build_model(s , pokedex, all_move_json):
     A = Model(inputs=inputA, outputs=A)
 
 
-    B = Dense(4, activation='relu')(inputB)
-    B = Dropout(0.2)(B)
-    B = Dense(4, activation='relu')(B)
+    B = Dense(24, activation='relu')(inputB)
     B = Model(inputs=inputB, outputs=B)
 
 
-    C = Dense(4, activation='relu')(inputC)
+    C = Dense(12, activation='relu')(inputC)
     C = Dropout(0.2)(C)
-    C = Dense(4, activation='relu')(C)
+    C = Dense(12, activation='relu')(C)
     C = Model(inputs=inputC, outputs=C)
 
 
-    D = Dense(4, activation='relu')(inputD)
-    D = Dropout(0.2)(D)
-    D = Dense(4, activation='relu')(D)
+    D = Dense(25, activation='relu')(inputD)
     D = Model(inputs=inputD, outputs=D)
 
 
-    E = Dense(8, activation='relu')(inputE)
-    E = Dropout(0.2)(E)
-    E = Dense(8, activation='relu')(E)
+    E = Dense(37, activation='relu')(inputE)
     E = Model(inputs=inputE, outputs=E)
 
     combined = concatenate([A.output, B.output, C.output, D.output, E.output])

@@ -34,9 +34,9 @@
     "side_conditions":{
         "self": {
             "toxic_count": -0.0,
-            "spikes": -0.1,
+            "spikes": 0,
             "protect": 0.0,
-            "stealthrock": -0.1,
+            "stealthrock": 0,
             "tailwind": 0.2,
             "reflect": 0.2,
             "lightscreen": 0.2,
