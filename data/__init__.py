@@ -1,7 +1,7 @@
 import os
 import json
 import pandas as pd
-from showdown.engine.helpers import normalize_name
+#from showdown.engine.helpers import normalize_name
 #PWD = "/home/arevell/Documents/pokemon/showdown/data"
 PWD = os.path.dirname(os.path.abspath(__file__))
 
@@ -40,7 +40,7 @@ items = items["items"]
 
 abilities_csv_location = os.path.join(PWD, 'abilities.csv')
 abilities = pd.read_csv(abilities_csv_location)
-abilities = [normalize_name(x) for x in abilities["name"] ]
+#abilities = [normalize_name(x) for x in abilities["name"] ]
 
 
 

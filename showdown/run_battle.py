@@ -39,17 +39,17 @@ for gpu in gpus:
   tf.config.experimental.set_memory_growth(gpu, True)
 
 
-
+#%
 def battle_is_finished(battle_tag, msg):
     return msg.startswith(">{}".format(battle_tag)) and constants.WIN_STRING in msg and constants.CHAT_STRING not in msg
 
 
-async def async_pick_move(battle, model, state_table, action, reward_sum, episode, y, eps, decay_factor):
+async def async_pick_move(battle, model, state_table, action, reward_sum, s_memory, episode, y, eps, decay_factor):
     battle_copy = deepcopy(battle)
     if battle_copy.request_json:
         battle_copy.user.from_json(battle_copy.request_json)
 
-    best_move, model, new_state_table, new_action, reward_sum = battle_copy.find_best_move(model, state_table, action, reward_sum, episode, y, eps, decay_factor)
+    best_move, model, new_state_table, new_action, reward_sum, s_memory = battle_copy.find_best_move(model, state_table, action, reward_sum, s_memory, episode, y, eps, decay_factor)
     #loop = asyncio.get_event_loop()
     #with concurrent.futures.ThreadPoolExecutor() as pool:
     #    best_move, model = await loop.run_in_executor(
@@ -59,7 +59,7 @@ async def async_pick_move(battle, model, state_table, action, reward_sum, episod
         battle.user.last_used_move = LastUsedMove(battle.user.active.name, "switch {}".format(choice.split()[-1]), battle.turn)
     else:
         battle.user.last_used_move = LastUsedMove(battle.user.active.name, choice.split()[2], battle.turn)
-    return best_move, model, new_state_table, new_action, reward_sum
+    return best_move, model, new_state_table, new_action, reward_sum, s_memory
 
 
 async def handle_team_preview(battle, ps_websocket_client, build_model_bool):
@@ -77,7 +77,7 @@ async def handle_team_preview(battle, ps_websocket_client, build_model_bool):
         # Find zoroark's index
         ind_zoroark = pokemon_names.index("zoroark")+1
         ind_shedinja = pokemon_names.index("shedinja")+1
-        model, state_table, action, reward_sum = battle_copy.initialize_battle(build_model_bool)
+        model, state_table, action, reward_sum, s_memory = battle_copy.initialize_battle(build_model_bool)
 
         best_move = f'/switch {ind_zoroark}'
         choice_digit = int(best_move.split()[-1])
@@ -87,7 +87,7 @@ async def handle_team_preview(battle, ps_websocket_client, build_model_bool):
         team_list_indexes.remove(ind_shedinja)
         message = ["/team {}{}{}|{}".format(ind_zoroark, "".join(str(x) for x in team_list_indexes), ind_shedinja, battle.rqid)]
     else:
-        model, state_table, action, reward_sum = battle_copy.initialize_battle(build_model_bool)
+        model, state_table, action, reward_sum, s_memory = battle_copy.initialize_battle(build_model_bool)
         first_pokemon_sent_out = random.randint(1, 6)
         first_pokemon_sent_out = 3
         best_move = f'/switch {first_pokemon_sent_out}'
@@ -99,7 +99,7 @@ async def handle_team_preview(battle, ps_websocket_client, build_model_bool):
 
     battle.user.active = battle.user.reserve.pop(choice_digit - 1)
     await ps_websocket_client.send_message(battle.battle_tag, message)
-    return model, state_table, action, reward_sum
+    return model, state_table, action, reward_sum, s_memory
 
 async def get_battle_tag_and_opponent(ps_websocket_client: PSWebsocketClient):
     while True:
@@ -196,9 +196,9 @@ async def start_standard_battle(ps_websocket_client: PSWebsocketClient, pokemon_
         )
         data.pokemon_sets = smogon_usage_data
 
-        model, state_table, action, reward_sum = await handle_team_preview(battle, ps_websocket_client, build_model_bool)
+        model, state_table, action, reward_sum, s_memory = await handle_team_preview(battle, ps_websocket_client, build_model_bool)
 
-    return battle, model, state_table, action, reward_sum
+    return battle, model, state_table, action, reward_sum, s_memory
 
 
 async def start_battle(ps_websocket_client, pokemon_battle_type, build_model_bool):
@@ -206,12 +206,12 @@ async def start_battle(ps_websocket_client, pokemon_battle_type, build_model_boo
         Scoring.POKEMON_ALIVE_STATIC = 30  # random battle benefits from a lower static score for an alive pkmn
         battle = await start_random_battle(ps_websocket_client, pokemon_battle_type)
     else:
-        battle, model, state_table, action, reward_sum = await start_standard_battle(ps_websocket_client, pokemon_battle_type, build_model_bool)
+        battle, model, state_table, action, reward_sum, s_memory = await start_standard_battle(ps_websocket_client, pokemon_battle_type, build_model_bool)
 
     await ps_websocket_client.send_message(battle.battle_tag, [config.greeting_message])
     await ps_websocket_client.send_message(battle.battle_tag, ['/timer off'])
 
-    return battle, model, state_table, action, reward_sum
+    return battle, model, state_table, action, reward_sum, s_memory
 
 model_name = "models/model.h5"
 async def pokemon_battle(ps_websocket_client, pokemon_battle_type):
@@ -221,7 +221,7 @@ async def pokemon_battle(ps_websocket_client, pokemon_battle_type):
         print("model does not exist, initializing model")
         build_model_bool = True
         episode = 0
-    battle, model, state_table, action, reward_sum = await start_battle(ps_websocket_client, pokemon_battle_type, build_model_bool)
+    battle, model, state_table, action, reward_sum, s_memory = await start_battle(ps_websocket_client, pokemon_battle_type, build_model_bool)
     if os.path.exists(model_name):
         model = load_model(model_name)
         episode = data_analysis.save_or_get_episode_number("models/episodes.txt", mode = "get")
@@ -246,7 +246,7 @@ async def pokemon_battle(ps_websocket_client, pokemon_battle_type):
 
             action_required = await async_update_battle(battle, msg)
             winner = msg.split(constants.WIN_STRING)[-1].split('\n')[0].strip()
-            model, reward_sum, turns = battle.battle_win_or_lose_reward(winner, model, state_table, action, reward_sum , episode, y)
+            model, reward_sum, turns = battle.battle_win_or_lose_reward(winner, model, state_table, action, reward_sum , s_memory,  episode, y)
             model.save(model_name)
             print(f"\nFinal battle sum: {np.round(reward_sum, 2)}\n\n")
             data_analysis.save_or_get_episode_number("models/episodes.txt", mode = "save", episode = episode + 1)
@@ -267,7 +267,7 @@ async def pokemon_battle(ps_websocket_client, pokemon_battle_type):
             action_required = await async_update_battle(battle, msg);
             print(f"{action_required and not battle.wait}")
             if action_required and not battle.wait:
-                best_move, model, state_table, action, reward_sum = await async_pick_move(battle, model, state_table, action, reward_sum, episode, y, eps, decay_factor)
+                best_move, model, state_table, action, reward_sum, s_memory = await async_pick_move(battle, model, state_table, action, reward_sum, s_memory, episode, y, eps, decay_factor)
                 #model.save(model_name)
                 print(f"sum= {np.round(reward_sum,1)}")
                 await ps_websocket_client.send_message(battle.battle_tag, best_move)

@@ -27,10 +27,11 @@ import seaborn as sns
 from showdown.engine.helpers import normalize_name
 #for reinforcement learning
 import numpy as np
-from tensorflow.keras.models import Sequential
-from tensorflow.keras.layers import Dense, Flatten, InputLayer, Dropout
+from tensorflow.keras.models import Sequential, Model
+from tensorflow.keras.layers import Dense, Flatten, InputLayer, Dropout, Input, Activation, MaxPooling2D, concatenate
 from tensorflow.keras.optimizers import Adam
 
+import pandas as pd
 
 from rl.agents import DQNAgent
 from rl.policy import BoltzmannQPolicy
@@ -43,6 +44,8 @@ from tensorflow.keras import layers
 from tensorflow.keras.callbacks import ModelCheckpoint
 import tensorflow.keras.backend as K
 from sklearn.preprocessing import OneHotEncoder
+
+abilities = [normalize_name(x) for x in abilities["name"] ]
 #%
 
 def prefix_opponent_move(score_lookup, prefix):
@@ -78,14 +81,14 @@ class BattleBot(Battle):
         super(BattleBot, self).__init__(*args, **kwargs)
 
 
-    def find_best_move(self, model, state_table, action, reward_sum, episode, y, eps, decay_factor):
+    def find_best_move(self, model, state_table, action, reward_sum, s_memory,  episode, y, eps, decay_factor):
         #checkpoint_filepath ='models/checkpoint'
         #cp_callback = tf.keras.callbacks.ModelCheckpoint( filepath=checkpoint_filepath, save_weights_only=False, save_best_only=False)
 
         #battle = battle_copy
-        state = self.create_state() #state = battle.create_state()
+        state = self.create_state() #state = battle.create_state() #state = battle_copy.create_state()
         mutator = StateMutator(state) # mutator = StateMutator(state)
-        user_options, opponent_options = self.get_all_options() # user_options, opponent_options = battle.get_all_options()
+        user_options, opponent_options = self.get_all_options() # user_options, opponent_options = battle.get_all_options() # user_options, opponent_options = battle_copy.get_all_options()
 
         """
         print(model.optimizer.get_weights()[0])
@@ -114,23 +117,23 @@ class BattleBot(Battle):
             mutator = StateMutator(state)
             user_options, opponent_options = battle.get_all_options()
 
-
-            array = get_minimum_state_array(state, battle, mutator, pokedex, all_move_json, types, conditions)
             state_table = get_state_table_for_rewards(state, battle, mutator, pokedex, all_move_json, types, conditions)
-            s = determine_state_minimum(array, pokedex)
+
 
             """
-
-            array = get_minimum_state_array(state, self, mutator, pokedex, all_move_json, types, conditions)
+            s = get_state_array(state, self, mutator, pokedex, all_move_json, types, conditions, abilities, items)
+            #s = get_state_array(state, battle, mutator, pokedex, all_move_json, types, conditions, abilities, items)
+            s_memory[0] = s
             state_table = get_state_table_for_rewards(state, self, mutator, pokedex, all_move_json, types, conditions)
-            s = determine_state_minimum(array, pokedex)
+            #state_table = get_state_table_for_rewards(state, battle, mutator, pokedex, all_move_json, types, conditions)
         else:
             """
             previous_state_table = state_table
             state = battle.create_state()
             mutator = StateMutator(state)
             user_options, opponent_options = battle.get_all_options()
-            array = get_minimum_state_array(state, battle, mutator, pokedex, all_move_json, types, conditions)
+            s = get_state_array(state, battle, mutator, pokedex, all_move_json, types, conditions, abilities, items)
+
             current_state_table = get_state_table_for_rewards(state, battle, mutator, pokedex, all_move_json, types, conditions)
             reward = calculate_reward_from_state_table(previous_state_table, current_state_table, reward_table)
             """
@@ -138,21 +141,32 @@ class BattleBot(Battle):
             state = self.create_state()
             mutator = StateMutator(state)
             user_options, opponent_options = self.get_all_options()
-            array = get_minimum_state_array(state, self, mutator, pokedex, all_move_json, types, conditions)
+            s = get_state_array(state, self, mutator, pokedex, all_move_json, types, conditions, abilities, items)
             current_state_table = get_state_table_for_rewards(state, self, mutator, pokedex, all_move_json, types, conditions)
             reward = calculate_reward_from_state_table(previous_state_table, current_state_table, reward_table)
             print(f"                Turn {self.turn-1} reward sum:    {np.round(reward,2)}:   {action}")
             state_table = current_state_table
-            s = determine_state_minimum(array, pokedex)
             #update neural network based on reward
             #https://adventuresinmachinelearning.com/reinforcement-learning-tutorial-python-keras/
-            array_previous = get_minimum_state_array_from_state_table(previous_state_table)
-            s_previous = determine_state_minimum(array_previous, pokedex)
+
+
+            #getting previous s and filling in next s
+            if self.turn <= len(s_memory):
+                s_memory[self.turn - 1] = s
+                previous_s = s_memory[self.turn - 2]
+            else:
+                index = (self.turn-1) % 5
+                s_memory[index] = s
+                previous_s = s_memory[index - 1]
+
             action_previous = action
 
             action_index = determine_previous_action_indexes(action_previous, pokedex, all_move_json)
-            target = reward + y * np.max(model.predict(s.reshape(1,-1)))
-            target_vec = model.predict(s_previous.reshape(1,-1))[0]
+
+
+            s_5 = np.concatenate([s[4], s[5] ], axis = 0)
+            target = reward + y * np.max(model.predict(  [ s[0].reshape(1,-1), s[1].reshape(1,-1), s[2].reshape(1,-1), s[3].reshape(1,-1), s_5.reshape(1,-1) ]  ))
+            target_vec =model.predict(  [ s[0].reshape(1,-1), s[1].reshape(1,-1), s[2].reshape(1,-1), s[3].reshape(1,-1), s_5.reshape(1,-1) ]  )[0]
             target_vec[action_index] = target
 
             """
@@ -206,7 +220,7 @@ class BattleBot(Battle):
             """
 
             print(f"                Episode: {episode}; Epsilon: {np.round(eps,2)}")
-            model.fit(s_previous.reshape(1,-1), target_vec.reshape(-1, len(target_vec)), verbose=0)
+            model.fit([ s[0].reshape(1,-1), s[1].reshape(1,-1), s[2].reshape(1,-1), s[3].reshape(1,-1), s_5.reshape(1,-1) ] , target_vec.reshape(-1, len(target_vec)), verbose=0)
             reward_sum += reward
 
 
@@ -215,30 +229,33 @@ class BattleBot(Battle):
             action = user_options[a]
         else:
             action = pick_action_RL(model, state, self, mutator, pokedex, all_move_json, types, conditions)
-        #action = pick_action_RL(model, state, battle, mutator, pokedex, all_move_json, types, conditions)
+            #action = pick_action_RL(model, state, battle, mutator, pokedex, all_move_json, types, conditions)
         #battles = self.prepare_battles(join_moves_together=True) #battles = battle.prepare_battles(join_moves_together=True)
         #safest_move = pick_safest_move_from_battles(battles)
         best_move = format_decision(self, action) #best_move = format_decision(battle, action)
-        return best_move, model, state_table, action, reward_sum
+        return best_move, model, state_table, action, reward_sum, s_memory
 
     def initialize_battle(self, build_model_bool):
         state = self.create_state() # state = battle.create_state()  # state = battle_copy.create_state()
         mutator = StateMutator(state) # mutator = StateMutator(state)
         user_options, opponent_options = self.get_all_options() # user_options, opponent_options = battle.get_all_options() # user_options, opponent_options = battle_copy.get_all_options()
-        #print(f"user options: {user_options}")
-        array = get_state_array(state, self, mutator, pokedex, all_move_json, types, conditions, initialize = True)
-        #array = get_state_array(state, battle_copy, mutator, pokedex, all_move_json, types, conditions, initialize = True)
+
+        s = get_state_array(state, self, mutator, pokedex, all_move_json, types, conditions, abilities, items, initialize = True)
+        #s = get_state_array(state, battle_copy, mutator, pokedex, all_move_json, types, conditions, abilities, items, initialize = True)
+
         state_table = None
         action = None
         reward_sum = 0
-        s = determine_state_minimum(array, pokedex)
+
+        s_memory = [s,s,s,s,s] #remembers last 5 s's
+
         if build_model_bool:
             model = build_model(s, pokedex, all_move_json)
         else:
             model = None
-        return model, state_table, action, reward_sum
+        return model, state_table, action, reward_sum, s_memory
 
-    def battle_win_or_lose_reward(self, winner, model, state_table, action, reward_sum, episode, y ):
+    def battle_win_or_lose_reward(self, winner, model, state_table, action, reward_sum, s_memory, episode, y ):
         """
         previous_state_table = state_table
         state = battle.create_state()
@@ -258,16 +275,26 @@ class BattleBot(Battle):
         state = self.create_state()
         mutator = StateMutator(state)
         user_options, opponent_options = self.get_all_options()
-        array = get_minimum_state_array(state, self, mutator, pokedex, all_move_json, types, conditions)
+
+        s = get_state_array(state, self, mutator, pokedex, all_move_json, types, conditions, abilities, items)
+
         reward = reward_table["pokemon_all_faint"][person]* multiplier
-        s = determine_state_minimum(array, pokedex)
-        array_previous = get_minimum_state_array_from_state_table(previous_state_table)
-        s_previous = determine_state_minimum(array_previous, pokedex)
+
+        #getting previous s and filling in next s
+        if self.turn <= len(s_memory):
+            s_memory[self.turn - 1] = s
+            previous_s = s_memory[self.turn - 2]
+        else:
+            index = (self.turn-1) % 5
+            s_memory[index] = s
+            previous_s = s_memory[index - 1]
+
         action_previous = action
 
         action_index = determine_previous_action_indexes(action_previous, pokedex, all_move_json)
-        target = reward + y * np.max(model.predict(s.reshape(1,-1)))
-        target_vec = model.predict(s_previous.reshape(1,-1))[0]
+        s_5 = np.concatenate([s[4], s[5] ], axis = 0)
+        target = reward + y * np.max(model.predict(  [ s[0].reshape(1,-1), s[1].reshape(1,-1), s[2].reshape(1,-1), s[3].reshape(1,-1), s_5.reshape(1,-1) ]  ))
+        target_vec =model.predict(  [ s[0].reshape(1,-1), s[1].reshape(1,-1), s[2].reshape(1,-1), s[3].reshape(1,-1), s_5.reshape(1,-1) ]  )[0]
         target_vec[action_index] = target
         """
         # adjust learning rate through internal calculations given by initial_epoch, which seems to help anecdodally
@@ -287,7 +314,7 @@ class BattleBot(Battle):
             model.fit(s_previous.reshape(1,-1), target_vec.reshape(-1, len(target_vec)), initial_epoch=episode, epochs=episode + 1, verbose=0)
         """
 
-        model.fit(s_previous.reshape(1,-1), target_vec.reshape(-1, len(target_vec)), verbose=0)
+        model.fit([ s[0].reshape(1,-1), s[1].reshape(1,-1), s[2].reshape(1,-1), s[3].reshape(1,-1), s_5.reshape(1,-1) ] , target_vec.reshape(-1, len(target_vec)), verbose=0)
         reward_sum += reward
         turns = self.turn
         return model, reward_sum, turns
@@ -312,8 +339,8 @@ def get_pokemon_index_number(name, pokedex):
     from data import pokedex
     """
     if name in pokedex.keys(): #if the name exists, then find the pokedex number (the index in the json file, not the actual pokedex number)
-        ind = list(pokedex.keys()).index(name)
-    else: ind = len(pokedex.keys()) # if pokemon is not in pokedex, then make it the unknown index (the largest index + 1)
+        ind = list(pokedex.keys()).index(name) + 1
+    else: ind = len(pokedex.keys()) +2 # if pokemon is not in pokedex, then make it the unknown index (the largest index + 1)
     return ind
 
 def get_move_index_number(move, all_move_json):
@@ -341,6 +368,24 @@ def get_move_set_index_number_and_pp(moves, all_move_json):
         indexes = [0,0,0,0]
         disabled = [False, False, False, False]
         pp = [20, 20, 20, 20] #dummy moves where their pp is 20
+
+    #if pkmn only has 1-3 moves, fill in zeros
+    if len(moves) == 1:
+        indexes = indexes + [0,0,0]
+        disabled = disabled + [False, False, False]
+        pp = pp + [20,20,20]
+    if len(moves) == 2:
+        indexes = indexes + [0,0]
+        disabled = disabled + [ False, False]
+        pp = pp + [20,20]
+    if len(moves) == 3:
+        indexes = indexes + [0]
+        disabled = disabled + [ False]
+        pp = pp + [20]
+
+    for dis in range(len(disabled)):
+        if disabled[dis] == False: disabled[dis] = 0
+        else: disabled[dis] = 1
     return indexes, disabled, pp
 
 
@@ -353,7 +398,7 @@ def get_ability_index_number(ability, abilities):
         ind = 0
     elif ability in abilities:
         ind = abilities.index(ability) + 1 #adding 1, because index of 0 is None
-    else: len(abilities) + 2 # if there's a new ability not in the csv ability file (in data folder)
+    else: ind = len(abilities) + 2 # if there's a new ability not in the csv ability file (in data folder)
     return ind
 
 def get_item_index_number(item, items):
@@ -365,11 +410,13 @@ def get_item_index_number(item, items):
     items
     """
 
-    if item == "unknown_item": #if we do not know the item currently (has not revealed itself)
+    if item == None:
         ind = 0
+    elif item == "unknown_item": #if we do not know the item currently (has not revealed itself)
+        ind = 1
     elif item in items:
-        ind = items.index(item) + 1 #adding 1, because index of 0 is None
-    else: len(items) + 2 # if there's a new item not in the item file (in data folder)
+        ind = items.index(item) + 2 #adding 1, because index of 0 is None
+    else: ind = len(items) + 3 # if there's a new item not in the item file (in data folder)
     return ind
 
 def get_status_index_number(status,  conditions):
@@ -584,9 +631,15 @@ def get_pkmn_status_df(pkmn_dict, pokedex, all_move_json, abilities, types, item
                                            "move_1", "move_1_disabled", "move_1_pp", "move_2", "move_2_disabled" , "move_2_pp", "move_3", "move_3_disabled", "move_3_pp", "move_4", "move_4_disabled" ,"move_4_pp"])
     moves = pkmn_dict["moves"]
     move_set_indexes, move_set_disabled, move_set_pp = get_move_set_index_number_and_pp(moves, all_move_json)
+
+    #when pkmn faints, max hp is set to zero for some reason, so setting to 1 so not to divide by zero
+    if pkmn_dict["maxhp"] == 0:
+        hp_max = 1
+    else:
+        hp_max = pkmn_dict["maxhp"]
     d = dict( name = pkmn_dict["id"],
              id = get_pokemon_index_number( pkmn_dict["id"], pokedex),
-             hp = pkmn_dict["hp"] / pkmn_dict["maxhp"],
+             hp = pkmn_dict["hp"] / hp_max,
              ability = get_ability_index_number(pkmn_dict["ability"], abilities),
              type = get_type_index(pkmn_dict["types"], types)  ,
              item = get_item_index_number(pkmn_dict["item"], items),
@@ -614,7 +667,63 @@ def get_pkmn_status_df(pkmn_dict, pokedex, all_move_json, abilities, types, item
              )
     df = df.append( d , ignore_index=True)
     return df
-#%%
+
+
+def one_hot(name, index, pokedex, all_move_json, types, conditions, abilities, items):
+    """
+    index = df_active["id"][0]
+    index = df_active["move_1"][0]
+    df_active["volatile"][0] = [0,1]
+    index =  df_active["volatile"][0]
+    """
+    if name == "id":
+        one_hot = np.zeros(len(pokedex)+2)
+        one_hot[index] = 1
+        return one_hot
+    if name == "ability":
+        one_hot = np.zeros(len(abilities)+2)
+        one_hot[index] = 1
+        return one_hot
+    if name == "type":
+        types_combo = list(itertools.combinations(types, 2))
+        types_all = list(zip(types))
+        types_all.extend(types_combo )
+        one_hot = np.zeros(len(types_all))
+        one_hot[index] = 1
+        return one_hot
+    if name == "item":
+        one_hot = np.zeros(len(items)+ 2)
+        one_hot[index] = 1
+        return one_hot
+    if name == "status":
+        one_hot = np.zeros(len(conditions["status"])+ 2)
+        one_hot[index] = 1
+        return one_hot
+    if name == "volatile":
+        one_hot = np.zeros(len(conditions["volatile_status"])+ 2)
+        for v in range(len(index)):
+            one_hot[v] = 1
+        return one_hot
+    if name == "move":
+        one_hot = np.zeros(len(all_move_json)+2)
+        one_hot[index] = 1
+        return one_hot
+    if name == "disabled":
+        one_hot = np.zeros(2)
+        one_hot[index] = 1
+        return one_hot
+    if name == "field":
+        one_hot = np.zeros(len(conditions["field"]))
+        one_hot[index] = 1
+        return one_hot
+    if name == "weather":
+        one_hot = np.zeros(len(conditions["weather"]))
+        one_hot[index] = 1
+        return one_hot
+
+
+
+#%
 def get_state_array(state, battle, mutator, pokedex, all_move_json, types, conditions, abilities, items, initialize = False):
     """
     battle = battle_copy
@@ -622,8 +731,12 @@ def get_state_array(state, battle, mutator, pokedex, all_move_json, types, condi
     """
     #pkmn_ind, hp, type, status, boost_attack, boost_defend, boost_sp, boost_sd, boost_speed, boost_acc, boost_evasion, move1_id, ppx4
     if initialize: #initializing for first move with an blank array data
-        array_wide = np.zeros( shape = (12, 9)   )
-        array = array_wide.flatten()
+        array_active_categories = np.zeros(9806)
+        array_active_numeric = np.zeros(24)
+        array_reserve_categories = np.zeros(48490)
+        array_reserve_numeric = np.zeros(25)
+        array_side_conditions = np.zeros(24)
+        array_field = np.zeros(13)
     else:
 
         #get active ddf
@@ -651,7 +764,7 @@ def get_state_array(state, battle, mutator, pokedex, all_move_json, types, condi
                                            "move_1_disabled",  "move_2_disabled" ,"move_3_disabled", "move_4_disabled" ]
 
 
-        for r in range(len(reserve_keys_self)):
+        for r in range(5):
             if r < len(reserve_keys_self):
                 d = get_pkmn_status_df(new_state_dict["self"]["reserve"][reserve_keys_self[r]], pokedex, all_move_json, abilities, types, items, conditions)
                 d = d.drop(remove_columns, axis = 1)
@@ -659,7 +772,7 @@ def get_state_array(state, battle, mutator, pokedex, all_move_json, types, condi
                                        move_1 = 0, move_1_pp = 0, move_2 = 0, move_2_pp = 0, move_3 = 0, move_3_pp = 0, move_4 = 0, move_4_pp = 0)
             df_reserve_self = df_reserve_self.append(d, ignore_index=True)
 
-        for r in range(6):
+        for r in range(5):
             if r < len(reserve_keys_opponent):
                 d = get_pkmn_status_df(new_state_dict["opponent"]["reserve"][reserve_keys_opponent[r]], pokedex, all_move_json, abilities, types, items, conditions)
                 d = d.drop(remove_columns, axis = 1)
@@ -669,13 +782,71 @@ def get_state_array(state, battle, mutator, pokedex, all_move_json, types, condi
 
 
         #get side conditions
-        array_side_conditions = np.vstack([get_side_conditions(mutator.state.self) , get_side_conditions(mutator.state.opponent)]    )
+        array_side_conditions = np.concatenate([get_side_conditions(mutator.state.self) , get_side_conditions(mutator.state.opponent)]    )
 
         #convert to one-hot-encoding
+        categories = ["id", "ability", "type", "item", "status", "volatile", "move_1", "move_2", "move_3", "move_4", "move_1_disabled", "move_2_disabled", "move_3_disabled", "move_4_disabled"]
+        names = ["id", "ability", "type", "item", "status", "volatile", "move", "move", "move", "move", "disabled", "disabled", "disabled", "disabled"]
+
+        for a in range(2):
+            for l in range(len(categories)):
+                if a == 0 and l == 0:
+                    array_active_categories = one_hot( names[l], df_active[categories[l] ][a], pokedex, all_move_json, types, conditions, abilities, items)
+                else:
+                    array_active_categories = np.concatenate([array_active_categories, one_hot(names[l], df_active[categories[l] ][a], pokedex, all_move_json, types, conditions, abilities, items) ], axis = 0)
+
+        #get numerical
+        categories = ["hp", "attack_boost", "defense_boost", "special_attack_boost", "special_defense_boost", "speed_boost", "accuracy_boost", "evasion_boost", "move_1_pp", "move_2_pp", "move_3_pp", "move_4_pp"]
+        for a in range(2):
+            for l in range(len(categories)):
+                if a ==0 and l == 0:
+                    array_active_numeric = np.array([df_active[categories[l]][a]])
+                else:
+                    array_active_numeric = np.concatenate([array_active_numeric,
+                                    np.array(   [  df_active[categories[l]][a] ]     )      ]    )
 
 
+        df_reserve = [df_reserve_self, df_reserve_opponent]
+        #reserve
+        #convert to one-hot-encoding
+        categories = ["id", "ability", "type", "item", "status", "move_1", "move_2", "move_3", "move_4"]
+        names = ["id", "ability", "type", "item", "status", "move", "move", "move", "move"]
 
-    return array
+        for r in range(2):
+            for a in range(5):
+                for l in range(len(categories)):
+                    if a == 0 and l == 0 and r == 0:
+                        array_reserve_categories = one_hot( names[l], df_reserve[r][categories[l] ][a], pokedex, all_move_json, types, conditions, abilities, items)
+                    else:
+                        array_reserve_categories = np.concatenate([array_reserve_categories, one_hot(names[l], df_reserve[r][categories[l] ][a], pokedex, all_move_json, types, conditions, abilities, items) ], axis = 0)
+
+
+        #get numerical
+        categories = ["hp", "move_1_pp", "move_2_pp", "move_3_pp", "move_4_pp"]
+        for r in range(2):
+            for a in range(5):
+                for l in range(len(categories)):
+                    if a ==0 and l == 0:
+                        array_reserve_numeric = np.array([df_reserve[r][categories[l]][a]])
+                    else:
+                        array_reserve_numeric = np.concatenate([array_active_numeric,
+                                        np.array(   [  df_reserve[r][categories[l]][a] ]     )      ]    )
+
+
+        if new_state_dict["trickroom"]:
+            trickroom = np.array([1])
+        else:
+            trickroom = np.array([0])
+        wish = np.concatenate( [ np.array(new_state_dict["self"]["wish"]), np.array(new_state_dict["opponent"]["wish"]) ]  )
+        land = np.concatenate([
+        one_hot( "weather", get_weather_index(new_state_dict["weather"], conditions), pokedex, all_move_json, types, conditions, abilities, items),
+        one_hot( "field", get_weather_index(new_state_dict["field"], conditions), pokedex, all_move_json, types, conditions, abilities, items)
+        ])
+        array_field = np.concatenate( [ land, wish, trickroom] )
+
+    s = [array_active_categories, array_active_numeric, array_reserve_categories, array_reserve_numeric, array_side_conditions, array_field]
+
+    return s
 
 
 
@@ -1056,33 +1227,55 @@ def determine_previous_action_indexes(action_previous, pokedex, all_move_json):
 
 
 #%
-def build_model(s, pokedex, all_move_json):
+def build_model(s , pokedex, all_move_json):
+    s_active_categories, s_active_numeric, s_reserve_categories, s_reserve_numeric, s_side_conditions, s_field = s
     number_of_actions = len(pokedex) + len(all_move_json)
-    input_len = len(s)
 
-    model = Sequential()
-    model.add(InputLayer(batch_input_shape=(1, input_len)))
-    """
-    model.add(Dense(100, activation='relu'))
-    model.add(Dropout(0.2))
-    model.add(Dense(100, activation='relu'))
-    model.add(Dropout(0.2))
-    model.add(Dense(100, activation='relu'))
-    model.add(Dropout(0.2))
-    model.add(Dense(100, activation='relu'))
-    model.add(Dropout(0.2))
-    model.add(Dense(100, activation='relu'))
-    """
-    model.add(Dense(32, activation='relu'))
-    model.add(Dropout(0.2))
-    model.add(Dense(32, activation='relu'))
-    model.add(Dropout(0.2))
-    model.add(Dense(32, activation='relu'))
-    model.add(Dropout(0.2))
-
-
-    model.add(Dense(number_of_actions, activation='sigmoid'))
     optimizer = keras.optimizers.Adam( beta_1 = 0.99, learning_rate = 0.05)
+
+    inputA = Input(shape = (  len(s_active_categories), )   )
+    inputB = Input(shape = (  len(s_active_numeric), )   )
+    inputC = Input(shape = (  len(s_reserve_categories), )   )
+    inputD = Input(shape = (  len(s_reserve_numeric), )   )
+    inputE = Input(shape = (  len(s_side_conditions) +  len(s_field), )   )
+
+
+    A = Dense(32, activation='relu')(inputA)
+    A = Dropout(0.2)(A)
+    A = Dense(32, activation='relu')(A)
+    A = Model(inputs=inputA, outputs=A)
+
+
+    B = Dense(4, activation='relu')(inputB)
+    B = Dropout(0.2)(B)
+    B = Dense(4, activation='relu')(B)
+    B = Model(inputs=inputB, outputs=B)
+
+
+    C = Dense(4, activation='relu')(inputC)
+    C = Dropout(0.2)(C)
+    C = Dense(4, activation='relu')(C)
+    C = Model(inputs=inputC, outputs=C)
+
+
+    D = Dense(4, activation='relu')(inputD)
+    D = Dropout(0.2)(D)
+    D = Dense(4, activation='relu')(D)
+    D = Model(inputs=inputD, outputs=D)
+
+
+    E = Dense(8, activation='relu')(inputE)
+    E = Dropout(0.2)(E)
+    E = Dense(8, activation='relu')(E)
+    E = Model(inputs=inputE, outputs=E)
+
+    combined = concatenate([A.output, B.output, C.output, D.output, E.output])
+
+    Z = Dense(32, activation="relu")(combined)
+    Z = Dense(number_of_actions, activation="sigmoid")(Z)
+
+    model = Model(inputs=[A.input, B.input, C.input, D.input, E.input], outputs=Z)
+
     model.compile(loss='mse', optimizer=optimizer, metrics=['mae'])
     print(model.summary())
     return model
@@ -1092,9 +1285,10 @@ def build_model(s, pokedex, all_move_json):
 
 
 def pick_action_RL(model, state, battle, mutator, pokedex, all_move_json, types, conditions):
-    array = get_minimum_state_array(state, battle, mutator, pokedex, all_move_json, types, conditions) # array is state
-    s = determine_state_minimum(array, pokedex)
-    Q = model.predict(s.reshape(1,-1))
+    s = get_state_array(state, battle, mutator, pokedex, all_move_json, types, conditions, abilities, items)
+
+    s_5 = np.concatenate([s[4], s[5] ], axis = 0)
+    Q = model.predict(  [ s[0].reshape(1,-1), s[1].reshape(1,-1), s[2].reshape(1,-1), s[3].reshape(1,-1), s_5.reshape(1,-1) ]  )
     actions_possible = determine_next_action_indexes(battle, pokedex, all_move_json)
     action_ind = np.argmax(Q[0,actions_possible])
     user_options, opponent_options = battle.get_all_options()
