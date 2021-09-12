@@ -296,7 +296,7 @@ async def pokemon_battle(ps_websocket_client, pokemon_battle_type):
                 #model.save(model_name)
                 print(f"                New Action:            {action}")
                 print(f"sum= {np.round(reward_sum,1)}")
-                #time.sleep(2)
+                time.sleep(3)
                 await ps_websocket_client.send_message(battle.battle_tag, best_move)
 
 

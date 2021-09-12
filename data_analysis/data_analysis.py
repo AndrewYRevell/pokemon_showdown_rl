@@ -107,7 +107,7 @@ def data_analysis(metrics, save_figure_path = None, save_figure_bool = True, rol
     axes[1].axhline(0, color = "#444444", ls = "--")
     axes[1].set_ylabel("Reward" )
     axes[1].set_title("Cumulative Reward from a Battle")
-    axes[1].set_ylim([-15,815])
+    axes[1].set_ylim([-15,15])
 
     ysmoothed = gaussian_filter1d(reward_sum,  sigma=50)
     sns.lineplot(data=  ysmoothed, ax =  axes[1], color = "#1c6dd8", linewidth = 5)
