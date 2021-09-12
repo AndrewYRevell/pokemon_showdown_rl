@@ -136,9 +136,13 @@ class BattleBot(Battle):
             current_state_table = get_state_table_for_rewards(state, self, mutator, pokedex, all_move_json, types, conditions)
             reward = calculate_reward_from_state_table(previous_state_table, current_state_table, reward_table)
             action_previous = self.user.last_used_move.move #action_previous =  battle_copy.user.last_used_move.move
-            #if player used a move that is immune to the opponent, decrease reward
 
-            reward = player_used_an_immune_move_decrease_reward(self, msg, reward, reward_table)
+            #Failed moves negative reward
+            #if player used a move that is immune to the opponent, decrease reward
+            reward = player_used_an_immune_move_decrease_reward(self, msg, reward, reward_table)#player_used_an_immune_move_decrease_reward(battle, msg, reward, reward_table)
+            reward = player_used_a_stat_move_but_wont_go_any_higher_decrease_reward(self, msg, reward, reward_table) # player_used_a_stat_move_but_wont_go_any_higher_decrease_reward(battle, msg, reward, reward_table)
+            reward = player_used_a_heal_move_but_failed_decrease_reward(self, msg, reward, reward_table) # player_used_a_heal_move_but_failed_decrease_reward(battle, msg, reward, reward_table)
+
             if pkmn_fainted_no_reward_next == 1:  #in the case where a pokemon has fainted and you are forced to select a switch, do not give a negative reward AGAIN for getting a fainted pkmn
                 reward =0
                 y = 1
@@ -280,15 +284,59 @@ def player_used_an_immune_move_decrease_reward(battle, msg, reward, reward_table
         split_msg = line.split('|')
         if len(split_msg) < 2:
             continue
-        if "-immune" in split_msg:
+        if "-immune" in split_msg or "-fail" in split_msg:
             for k, l in enumerate(split_msg):
                 split_l = l.split(' ')
-                if battle.opponent.active.name in split_l:
+                if battle.opponent.active.name in [normalize_name(x) for x in split_l]:
                      reward_new = reward - reward_table["used_an_immune_move"]["self"]
                      reward = reward_new
-                     print(f"                Immunity: {battle.opponent.active.name}. New Reward: {np.round(reward_new,2)}")
+                     print(f"                Immunity/Fail: {battle.opponent.active.name}. New Reward: {np.round(reward_new,2)}")
 
     return reward
+
+def player_used_a_stat_move_but_wont_go_any_higher_decrease_reward(battle, msg, reward, reward_table):
+    msg_lines = msg.split('\n')
+    duplicate = 0
+    for i, line in enumerate(msg_lines):
+        split_msg = line.split('|')
+        if len(split_msg) < 2:
+            continue
+        pkmn = None
+        if "-boost" in split_msg and duplicate == 0:
+            for k, l in enumerate(split_msg):
+                split_l = l.split(' ')
+                if battle.user.active.name in [normalize_name(x) for x in split_l]:
+                    pkmn = battle.user.active.name
+                if pkmn == battle.user.active.name:
+                    if l == "0":
+                        reward_new = reward - reward_table["used_an_immune_move"]["self"]
+                        reward = reward_new
+                        duplicate = 1
+                        print(f"                Stats won't go any higher. New Reward: {np.round(reward_new,2)}")
+
+    return reward
+
+def player_used_a_heal_move_but_failed_decrease_reward(battle, msg, reward, reward_table):
+    msg_lines = msg.split('\n')
+    for i, line in enumerate(msg_lines):
+        split_msg = line.split('|')
+        if len(split_msg) < 2:
+            continue
+        pkmn = None
+        if "-fail" in split_msg:
+            for k, l in enumerate(split_msg):
+                split_l = l.split(' ')
+                if battle.user.active.name in [normalize_name(x) for x in split_l]:
+                    pkmn = battle.user.active.name
+                if pkmn == battle.user.active.name:
+                    if "heal" in split_l:
+                        reward_new = reward - reward_table["used_an_immune_move"]["self"]
+                        reward = reward_new
+                        print(f"                HP won't go any higher. New Reward: {np.round(reward_new,2)}")
+
+    return reward
+
+
 
 #get the pokedex number and index
 def get_pokemon_index_number(name, pokedex):
@@ -561,11 +609,11 @@ def get_types_array(names_pokemon, active, reserve):
 def get_boost(pkmn):
     #pkmn = state.self.active
     boost = np.zeros(5)
-    boost[0] = pkmn.attack_boost
-    boost[1] = pkmn.defense_boost
-    boost[2] = pkmn.special_attack_boost
-    boost[3] = pkmn.special_defense_boost
-    boost[4] = pkmn.speed_boost
+    boost[0] = pkmn.attack_boost/6
+    boost[1] = pkmn.defense_boost/6
+    boost[2] = pkmn.special_attack_boost/6
+    boost[3] = pkmn.special_defense_boost/6
+    boost[4] = pkmn.speed_boost/6
     return boost
 
 
@@ -603,13 +651,13 @@ def get_pkmn_status_df(pkmn_dict, pokedex, all_move_json, abilities, types, item
              item = get_item_index_number(pkmn_dict["item"], items),
              status = get_status_index_number( pkmn_dict["status"],  conditions),
              volatile = get_volatile_index_number( pkmn_dict["volatileStatus"],  conditions),
-             attack_boost = pkmn_dict["attack_boost"],
-             defense_boost = pkmn_dict["defense_boost"],
-             special_attack_boost = pkmn_dict["special_attack_boost"],
-             special_defense_boost = pkmn_dict["special_defense_boost"],
-             speed_boost = pkmn_dict["speed_boost"],
-             accuracy_boost = pkmn_dict["accuracy_boost"],
-             evasion_boost = pkmn_dict["evasion_boost"],
+             attack_boost = pkmn_dict["attack_boost"]/6, #dividing by 6 to normalize (boosts are on a scale from -6 to 6)
+             defense_boost = pkmn_dict["defense_boost"]/6,
+             special_attack_boost = pkmn_dict["special_attack_boost"]/6,
+             special_defense_boost = pkmn_dict["special_defense_boost"]/6,
+             speed_boost = pkmn_dict["speed_boost"]/6,
+             accuracy_boost = pkmn_dict["accuracy_boost"]/6,
+             evasion_boost = pkmn_dict["evasion_boost"]/6,
              move_1 = move_set_indexes[0],
              move_1_disabled = move_set_disabled[0]   ,
              move_1_pp = move_set_pp[0],
