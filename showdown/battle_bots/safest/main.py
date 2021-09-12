@@ -81,14 +81,15 @@ class BattleBot(Battle):
         super(BattleBot, self).__init__(*args, **kwargs)
 
 
-    def find_best_move(self, model, model_team_preview, state_table, action,action_team_preview, reward_sum, s_memory, s_team_preview, episode, y, eps, decay_factor):
+    def find_best_move(self, model,msg, model_team_preview, state_table, action,action_team_preview, reward_sum, s_memory, s_team_preview, episode, y, eps, decay_factor, pkmn_fainted_no_reward_next):
         #checkpoint_filepath ='models/checkpoint'
         #cp_callback = tf.keras.callbacks.ModelCheckpoint( filepath=checkpoint_filepath, save_weights_only=False, save_best_only=False)
 
         #battle = battle_copy
         state = self.create_state() #state = battle.create_state() #state = battle_copy.create_state()
         mutator = StateMutator(state) # mutator = StateMutator(state)
-        user_options, opponent_options = self.get_all_options() # user_options, opponent_options = battle.get_all_options() # user_options, opponent_options = battle_copy.get_all_options()
+        user_options, opponent_options = self.get_all_options()#user_options,opponent_options = battle.get_all_options() #user_options, opponent_options = battle_copy.get_all_options()
+
         print(f"                Episode: {episode}; Epsilon:   {np.round(eps,2)}")
         """
         print(model.optimizer.get_weights()[0])
@@ -99,32 +100,33 @@ class BattleBot(Battle):
         """
         if self.turn == 1: #battle.turn == 1
             """
-            y = 0.95
-            eps = 0.5
-            decay_factor = 0.9
-            state = battle.create_state()
+            previous_state_table = state_table
+            state = battle_copy.create_state()
             mutator = StateMutator(state)
-            user_options, opponent_options = battle.get_all_options()
+            user_options, opponent_options = battle_copy.get_all_options()
 
             state_table = get_state_table_for_rewards(state, battle, mutator, pokedex, all_move_json, types, conditions)
 
 
             """
             s = get_state_array(state, self, mutator, pokedex, all_move_json, types, conditions, abilities, items)
-            #s = get_state_array(state, battle, mutator, pokedex, all_move_json, types, conditions, abilities, items)
+            #   s = get_state_array(state, battle, mutator, pokedex, all_move_json, types, conditions, abilities, items)
             s_memory[0] = s
             state_table = get_state_table_for_rewards(state, self, mutator, pokedex, all_move_json, types, conditions)
             #state_table = get_state_table_for_rewards(state, battle, mutator, pokedex, all_move_json, types, conditions)
         else:
             """
             previous_state_table = state_table
-            state = battle.create_state()
+            state = battle_copy.create_state()
             mutator = StateMutator(state)
-            user_options, opponent_options = battle.get_all_options()
-            s = get_state_array(state, battle, mutator, pokedex, all_move_json, types, conditions, abilities, items)
+            user_options, opponent_options = battle_copy.get_all_options()
+            s = get_state_array(state, battle_copy, mutator, pokedex, all_move_json, types, conditions, abilities, items)
 
-            current_state_table = get_state_table_for_rewards(state, battle, mutator, pokedex, all_move_json, types, conditions)
+            current_state_table = get_state_table_for_rewards(state, battle_copy, mutator, pokedex, all_move_json, types, conditions)
             reward = calculate_reward_from_state_table(previous_state_table, current_state_table, reward_table)
+            action_previous =  battle_copy.user.last_used_move.move
+
+
             """
             previous_state_table = state_table
             state = self.create_state()
@@ -133,8 +135,15 @@ class BattleBot(Battle):
             s = get_state_array(state, self, mutator, pokedex, all_move_json, types, conditions, abilities, items)
             current_state_table = get_state_table_for_rewards(state, self, mutator, pokedex, all_move_json, types, conditions)
             reward = calculate_reward_from_state_table(previous_state_table, current_state_table, reward_table)
-            print(f"                Turn {self.turn-1} reward sum:    {np.round(reward,2)}:   {action}")
+            action_previous = self.user.last_used_move.move #action_previous =  battle_copy.user.last_used_move.move
+            #if player used a move that is immune to the opponent, decrease reward
+
+            reward = player_used_an_immune_move_decrease_reward(self, msg, reward, reward_table)
+            if pkmn_fainted_no_reward_next == 1:  #in the case where a pokemon has fainted and you are forced to select a switch, do not give a negative reward AGAIN for getting a fainted pkmn
+                reward =0
+                y = 1
             state_table = current_state_table
+            print(f"                Turn {self.turn-1} reward sum:    {np.round(reward,2)}:   {action_previous}")
             #update neural network based on reward
             #https://adventuresinmachinelearning.com/reinforcement-learning-tutorial-python-keras/
 
@@ -148,7 +157,8 @@ class BattleBot(Battle):
                 s_memory[index] = s
                 previous_s = s_memory[index - 1]
 
-            action_previous = action
+
+
 
             action_index = determine_previous_action_indexes(action_previous, pokedex, all_move_json)
 
@@ -159,8 +169,10 @@ class BattleBot(Battle):
             target_vec =model.predict(  [ previous_s[0].reshape(1,-1), previous_s[1].reshape(1,-1), previous_s[2].reshape(1,-1), previous_s[3].reshape(1,-1), s_5_previous.reshape(1,-1) ]  )[0]
             target_vec[action_index] = target
 
-
-            model.fit([ previous_s[0].reshape(1,-1), previous_s[1].reshape(1,-1), previous_s[2].reshape(1,-1), previous_s[3].reshape(1,-1), s_5_previous.reshape(1,-1) ] , target_vec.reshape(-1, len(target_vec)), verbose=0)
+            if pkmn_fainted_no_reward_next != 1: #in the case where a pokemon has fainted and you are forced to select a switch, do not give a negative reward AGAIN for getting a fainted pkmn
+                model.fit([ previous_s[0].reshape(1,-1), previous_s[1].reshape(1,-1), previous_s[2].reshape(1,-1), previous_s[3].reshape(1,-1), s_5_previous.reshape(1,-1) ] , target_vec.reshape(-1, len(target_vec)), verbose=0)
+            else:
+                print(f"                pkmn has fainted in last turn, not rewarding any points. Not fitting model")
             reward_sum += reward
 
             #calculate reward for team preview selection:
@@ -262,7 +274,21 @@ class BattleBot(Battle):
 
 
 #%
+def player_used_an_immune_move_decrease_reward(battle, msg, reward, reward_table):
+    msg_lines = msg.split('\n')
+    for i, line in enumerate(msg_lines):
+        split_msg = line.split('|')
+        if len(split_msg) < 2:
+            continue
+        if "-immune" in split_msg:
+            for k, l in enumerate(split_msg):
+                split_l = l.split(' ')
+                if battle.opponent.active.name in split_l:
+                     reward_new = reward - reward_table["used_an_immune_move"]["self"]
+                     reward = reward_new
+                     print(f"                Immunity: {battle.opponent.active.name}. New Reward: {np.round(reward_new,2)}")
 
+    return reward
 
 #get the pokedex number and index
 def get_pokemon_index_number(name, pokedex):
@@ -326,7 +352,7 @@ def get_ability_index_number(ability, abilities):
     name = state.self.active.id
     from data import pokedex
     """
-    if ability == None: #if we do not know the ability currently (has not revealed itself)
+    if ability == None or ability == "none": #if we do not know the ability currently (has not revealed itself)
         ind = 0
     elif ability in abilities:
         ind = abilities.index(ability) + 1 #adding 1, because index of 0 is None
@@ -342,7 +368,7 @@ def get_item_index_number(item, items):
     items
     """
 
-    if item == None:
+    if item == None or item == "none":
         ind = 0
     elif item == "unknown_item": #if we do not know the item currently (has not revealed itself)
         ind = 1
@@ -352,7 +378,7 @@ def get_item_index_number(item, items):
     return ind
 
 def get_status_index_number(status,  conditions):
-    if status == None:
+    if status == None or status == "none":
         ind = 0
     elif status in conditions["status"]:
         ind = conditions["status"].index(status) +1
@@ -393,7 +419,7 @@ def get_type_index(pokemon_type, types):
     return ind
 
 def get_weather_index(weather, conditions):
-    if weather == None:
+    if weather == None or weather == "none":
         ind = 0
     elif weather in conditions["weather"]:
         ind = conditions["weather"].index(weather) + 1
@@ -402,7 +428,7 @@ def get_weather_index(weather, conditions):
     return ind
 
 def get_field_index(field, conditions):
-    if field == None:
+    if field == None or field == "none":
         ind = 0
     elif field in conditions["field"]:
         ind = conditions["field"].index(field) + 1
@@ -440,7 +466,7 @@ def get_trapped(battle):
 
 def get_status_conditions(state_person, pokedex, conditions):
     status_active = state_person.active.status
-    if status_active == None:
+    if status_active == None or status_active == "none":
         status_active_ind = 0
     elif status_active in conditions["status"]:
         status_active_ind = conditions["status"].index(status_active) +1
@@ -607,6 +633,9 @@ def one_hot(name, index, pokedex, all_move_json, types, conditions, abilities, i
     index = df_active["move_1"][0]
     df_active["volatile"][0] = [0,1]
     index =  df_active["volatile"][0]
+
+    name = "weather"
+    get_weather_index(new_state_dict["weather"],conditions)
     """
     if name == "id":
         one_hot = np.zeros(len(pokedex)+2)
@@ -645,11 +674,11 @@ def one_hot(name, index, pokedex, all_move_json, types, conditions, abilities, i
         one_hot[index] = 1
         return one_hot
     if name == "field":
-        one_hot = np.zeros(len(conditions["field"]))
+        one_hot = np.zeros(len(conditions["field"])+2)
         one_hot[index] = 1
         return one_hot
     if name == "weather":
-        one_hot = np.zeros(len(conditions["weather"]))
+        one_hot = np.zeros(len(conditions["weather"])+2)
         one_hot[index] = 1
         return one_hot
 
@@ -668,7 +697,7 @@ def get_state_array(state, battle, mutator, pokedex, all_move_json, types, condi
         array_reserve_categories = np.zeros(48490)
         array_reserve_numeric = np.zeros(25)
         array_side_conditions = np.zeros(24)
-        array_field = np.zeros(13)
+        array_field = np.zeros(17)
     else:
 
         #get active ddf
@@ -770,10 +799,12 @@ def get_state_array(state, battle, mutator, pokedex, all_move_json, types, condi
         else:
             trickroom = np.array([0])
         wish = np.concatenate( [ np.array(new_state_dict["self"]["wish"]), np.array(new_state_dict["opponent"]["wish"]) ]  )
+
         land = np.concatenate([
-        one_hot( "weather", get_weather_index(new_state_dict["weather"], conditions), pokedex, all_move_json, types, conditions, abilities, items),
-        one_hot( "field", get_weather_index(new_state_dict["field"], conditions), pokedex, all_move_json, types, conditions, abilities, items)
+            one_hot( "weather", get_weather_index(new_state_dict["weather"], conditions), pokedex, all_move_json, types, conditions, abilities, items),
+            one_hot( "field", get_field_index(new_state_dict["field"], conditions), pokedex, all_move_json, types, conditions, abilities, items)
         ])
+
         array_field = np.concatenate( [ land, wish, trickroom] )
 
     s = [array_active_categories, array_active_numeric, array_reserve_categories, array_reserve_numeric, array_side_conditions, array_field]
@@ -890,6 +921,11 @@ def get_minimum_state_array_from_state_table(state_table):
 
 #%
 def get_state_table_for_rewards(state, battle, mutator, pokedex, all_move_json, types, conditions):
+    """
+    np.where("tapulele" == np.array(list(pokedex.keys()))  )
+    np.where("tapukoko" == np.array(list(pokedex.keys()))  )
+    np.where("zoroark" == np.array(list(pokedex.keys()))  )
+    """
     #pkmn_ind, hp, type, status, boost_attack, boost_defend, boost_sp, boost_sd, boost_speed, boost_acc, boost_evasion, move1_id, ppx4
     array_wide = np.zeros( shape = (12, 9)   ) # 9 if include boosts
 
@@ -1266,30 +1302,29 @@ def build_model(s , pokedex, all_move_json):
 
     A = Dense(32, activation='relu')(inputA)
     A = Dropout(0.2)(A)
-    A = Dense(32, activation='relu')(A)
-    A = Model(inputs=inputA, outputs=A)
+    A = Model(inputs=inputA, outputs=inputA)
 
 
-    B = Dense(24, activation='relu')(inputB)
-    B = Model(inputs=inputB, outputs=B)
+    #B = Dense(24, activation='relu')(inputB)
+    B = Model(inputs=inputB, outputs=inputB)
 
 
     C = Dense(12, activation='relu')(inputC)
     C = Dropout(0.2)(C)
-    C = Dense(12, activation='relu')(C)
     C = Model(inputs=inputC, outputs=C)
 
 
-    D = Dense(25, activation='relu')(inputD)
-    D = Model(inputs=inputD, outputs=D)
+    #D = Dense(25, activation='relu')(inputD)
+    D = Model(inputs=inputD, outputs=inputD)
 
 
-    E = Dense(37, activation='relu')(inputE)
-    E = Model(inputs=inputE, outputs=E)
+    #E = Dense(37, activation='relu')(inputE)
+    E = Model(inputs=inputE, outputs=inputE)
 
     combined = concatenate([A.output, B.output, C.output, D.output, E.output])
 
-    Z = Dense(32, activation="relu")(combined)
+    Z = Dense(20, activation="relu")(combined)
+    Z = Dropout(0.2)(Z)
     Z = Dense(number_of_actions, activation="sigmoid")(Z)
 
     model = Model(inputs=[A.input, B.input, C.input, D.input, E.input], outputs=Z)
@@ -1307,17 +1342,17 @@ def build_model_team_preview(s_team_preview, pokedex, all_move_json):
     inputA = Input(shape = (  len(s_reserve_self), )   )
     inputB = Input(shape = (  len(s_reserve_opponent), )   )
 
-    A = Dense(16, activation='relu')(inputA)
+    A = Dense(8, activation='relu')(inputA)
     A = Dropout(0.2)(A)
     A = Model(inputs=inputA, outputs=A)
 
-    B = Dense(16, activation='relu')(inputB)
+    B = Dense(8, activation='relu')(inputB)
     B = Dropout(0.2)(B)
     B = Model(inputs=inputB, outputs=B)
     combined = concatenate([A.output, B.output])
 
-    Z = Dense(32, activation="relu")(combined)
-    Z = Dense(number_of_actions, activation="sigmoid")(Z)
+    #Z = Dense(8, activation="relu")(combined)
+    Z = Dense(number_of_actions, activation="sigmoid")(combined)
 
     model = Model(inputs=[A.input, B.input], outputs=Z)
 

@@ -532,17 +532,36 @@ def form_change(battle, split_msg):
 
     new_pokemon = Pokemon.from_switch_string(split_msg[3])
     new_pokemon.moves = previous_moves
-    if new_pokemon in side.reserve:
-        side.reserve.remove(new_pokemon)
 
-    side.active = new_pokemon
-    side.active.hp = hp_percent * side.active.max_hp
-    side.active.boosts = previous_boosts
-    side.active.status = previous_status
-    side.active.item = previous_item
+    #only if form change is NOT to Zoroark when it reveals itslef
+    if new_pokemon.name != "zoroark":
+        if new_pokemon in side.reserve:
+            side.reserve.remove(new_pokemon)
 
-    if side.active.name != "zoroark":
-        side.active.base_name = base_name
+        side.active = new_pokemon
+        side.active.hp = hp_percent * side.active.max_hp
+        side.active.boosts = previous_boosts
+        side.active.status = previous_status
+        side.active.item = previous_item
+
+        if side.active.name != "zoroark":
+            side.active.base_name = base_name
+
+    else:
+        old_pokemon = side.active
+        old_pokemon.moves = [] #This is not necessarily true since sometime in the battle, the real pokemon revealed its moves. Need to check how to handle this later.
+        old_pokemon.item = "unknown_item" #This is not necessarily true since sometime in the battle, the real pokemon revealed itself
+
+        if new_pokemon in side.reserve:
+            side.reserve.remove(new_pokemon)
+        side.reserve = side.reserve + [old_pokemon] #replacing with the old pokemon
+
+        side.active = new_pokemon
+        side.active.hp = hp_percent * side.active.max_hp
+        side.active.boosts = previous_boosts
+        side.active.status = previous_status
+        side.active.item = previous_item
+
 
 
 def zpower(battle, split_msg):

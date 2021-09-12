@@ -112,7 +112,16 @@ async def showdown():
         time.sleep(3)
         pokemon_battle_type = config.pokemon_mode
 
-        await ps_websocket_client.challenge_user(config.user_to_challenge, config.pokemon_mode, team)
+        if config.bot_mode == constants.CHALLENGE_USER:
+            await ps_websocket_client.challenge_user(config.user_to_challenge, config.pokemon_mode, team)
+        elif config.bot_mode == constants.ACCEPT_CHALLENGE:
+            await ps_websocket_client.accept_challenge(config.pokemon_mode, team, config.room_name, config.user_to_challenge)
+        elif config.bot_mode == constants.SEARCH_LADDER:
+            await ps_websocket_client.search_for_match(config.pokemon_mode, team)
+        else:
+            raise ValueError("Invalid Bot Mode")
+
+        #await ps_websocket_client.challenge_user(config.user_to_challenge, config.pokemon_mode, team)
 
 
 

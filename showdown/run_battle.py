@@ -21,7 +21,7 @@ from showdown.websocket_client import PSWebsocketClient
 from tensorflow.keras.models import save_model, load_model
 from numba import cuda
 import tensorflow as tf
-
+from showdown.engine.helpers import normalize_name
 
 from data_analysis import data_analysis
 
@@ -44,12 +44,18 @@ def battle_is_finished(battle_tag, msg):
     return msg.startswith(">{}".format(battle_tag)) and constants.WIN_STRING in msg and constants.CHAT_STRING not in msg
 
 
-async def async_pick_move(battle, model, model_team_preview, state_table, action, action_team_preview, reward_sum, s_memory, s_team_preview, episode, y, eps, decay_factor):
+async def async_pick_move(battle, msg, model,  model_team_preview, state_table, action, action_team_preview,
+                          reward_sum, s_memory, s_team_preview, episode, y, eps, decay_factor, pkmn_fainted_no_reward_next):
     battle_copy = deepcopy(battle)
     if battle_copy.request_json:
         battle_copy.user.from_json(battle_copy.request_json)
 
-    best_move, model, new_state_table, new_action, reward_sum, s_memory = battle_copy.find_best_move(model, model_team_preview, state_table, action, action_team_preview, reward_sum, s_memory, s_team_preview, episode, y, eps, decay_factor)
+    best_move, model, new_state_table, new_action, reward_sum, s_memory = battle_copy.find_best_move(model,msg,
+                                                                                                     model_team_preview,
+                                                                                                     state_table, action,
+                                                                                                     action_team_preview,
+                                                                                                     reward_sum, s_memory,
+                                                                                                     s_team_preview, episode, y, eps, decay_factor, pkmn_fainted_no_reward_next)
     #loop = asyncio.get_event_loop()
     #with concurrent.futures.ThreadPoolExecutor() as pool:
     #    best_move, model = await loop.run_in_executor(
@@ -212,7 +218,7 @@ async def start_battle(ps_websocket_client, pokemon_battle_type, build_model_boo
         battle, model, model_team_preview, state_table, action, action_team_preview, reward_sum, s_memory, s_team_preview = await start_standard_battle(ps_websocket_client, pokemon_battle_type, build_model_bool)
 
     await ps_websocket_client.send_message(battle.battle_tag, [config.greeting_message])
-    await ps_websocket_client.send_message(battle.battle_tag, ['/timer off'])
+    await ps_websocket_client.send_message(battle.battle_tag, ['/timer on'])
 
     return battle, model, model_team_preview, state_table, action, action_team_preview, reward_sum, s_memory, s_team_preview
 
@@ -231,8 +237,8 @@ async def pokemon_battle(ps_websocket_client, pokemon_battle_type):
         model_team_preview = load_model(model_team_preview_name)
         episode = data_analysis.save_or_get_episode_number("models/episodes.txt", mode = "get")
         print(f"model already exists. Number of battles played = {episode}")
-    y = 0.95
-    eps_start = 0.05
+    y = 0.99
+    eps_start = 0.01
     decay_factor = 0.995
     eps =  eps_start * (decay_factor**episode)
     if eps >0.1:
@@ -242,6 +248,7 @@ async def pokemon_battle(ps_websocket_client, pokemon_battle_type):
         if np.random.random() < 0.05:
             eps = 0.3
     print(f"Epsilon: {eps}")
+    pkmn_fainted_no_reward_next = 0
     while True:
         msg = await ps_websocket_client.receive_message()
         if battle_is_finished(battle.battle_tag, msg):
@@ -271,17 +278,43 @@ async def pokemon_battle(ps_websocket_client, pokemon_battle_type):
             await ps_websocket_client.leave_battle(battle.battle_tag, save_replay=config.save_replay)
             return winner
         else:
-            action_required = await async_update_battle(battle, msg);
+            action_required = await async_update_battle(battle, msg)
             #print(f"{action_required and not battle.wait}")
             if action_required and not battle.wait:
-                best_move, model, state_table, action, reward_sum, s_memory = await async_pick_move(battle, model, model_team_preview, state_table, action, action_team_preview, reward_sum, s_memory, s_team_preview, episode, y, eps, decay_factor)
+
+                best_move, model, state_table, action, reward_sum, s_memory = await async_pick_move(battle, msg,
+                                                                                                    model,
+                                                                                                    model_team_preview,
+                                                                                                    state_table, action,
+                                                                                                    action_team_preview,
+                                                                                                    reward_sum, s_memory,
+                                                                                                    s_team_preview,
+                                                                                                    episode, y, eps, decay_factor, pkmn_fainted_no_reward_next)
+                if check_if_pkmn_fainted(battle, msg): pkmn_fainted_no_reward_next = 1
+                else: pkmn_fainted_no_reward_next = 0
+
                 #model.save(model_name)
+                print(f"                New Action:            {action}")
                 print(f"sum= {np.round(reward_sum,1)}")
+                #time.sleep(2)
                 await ps_websocket_client.send_message(battle.battle_tag, best_move)
 
 
 
+def check_if_pkmn_fainted(battle, msg):
+    msg_lines = msg.split('\n')
+    pkmn_fainted = False
+    for i, line in enumerate(msg_lines):
+        split_msg = line.split('|')
+        if len(split_msg) < 2:
+            continue
+        if "faint" in split_msg:
+            for k, l in enumerate(split_msg):
+                split_l = l.split(' ')
+                if battle.user.active.name in [normalize_name(x) for x in split_l]:
+                     pkmn_fainted = True
 
+    return pkmn_fainted
 
 
 
