@@ -218,7 +218,7 @@ async def start_battle(ps_websocket_client, pokemon_battle_type, build_model_boo
         battle, model, model_team_preview, state_table, action, action_team_preview, reward_sum, s_memory, s_team_preview = await start_standard_battle(ps_websocket_client, pokemon_battle_type, build_model_bool)
 
     await ps_websocket_client.send_message(battle.battle_tag, [config.greeting_message])
-    await ps_websocket_client.send_message(battle.battle_tag, ['/timer on'])
+    await ps_websocket_client.send_message(battle.battle_tag, ['/timer off'])
 
     return battle, model, model_team_preview, state_table, action, action_team_preview, reward_sum, s_memory, s_team_preview
 
@@ -244,9 +244,9 @@ async def pokemon_battle(ps_websocket_client, pokemon_battle_type):
     if eps >0.1:
         if np.random.random() < 0.1: # % chance that eps will be very low
             eps = 0.02
-    elif eps <0.1:
-        if np.random.random() < 0.05:
-            eps = 0.3
+    #elif eps <0.1:
+    #    if np.random.random() < 0.05:
+    #        eps = 0.3
     print(f"Epsilon: {eps}")
     pkmn_fainted_no_reward_next = 0
     while True:
@@ -296,7 +296,7 @@ async def pokemon_battle(ps_websocket_client, pokemon_battle_type):
                 #model.save(model_name)
                 print(f"                New Action:            {action}")
                 print(f"sum= {np.round(reward_sum,1)}")
-                time.sleep(3)
+                #time.sleep(3)
                 await ps_websocket_client.send_message(battle.battle_tag, best_move)
 
 

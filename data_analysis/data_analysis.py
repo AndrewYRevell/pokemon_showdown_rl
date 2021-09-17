@@ -76,7 +76,7 @@ from scipy.ndimage.filters import gaussian_filter1d
 
 from scipy.interpolate import make_interp_spline, BSpline
 
-def data_analysis(metrics, save_figure_path = None, save_figure_bool = True, rolling_average = 50):
+def data_analysis(metrics, save_figure_path = None, save_figure_bool = True, rolling_average = 100):
     """
     save_figure_path = "data_analysis/plots/reward_sum_and_turns.pdf"
     metrics = save_or_get_metrics(path_to_data = "models/metrics.pickle" , mode = "get", renew = False)
@@ -107,7 +107,7 @@ def data_analysis(metrics, save_figure_path = None, save_figure_bool = True, rol
     axes[1].axhline(0, color = "#444444", ls = "--")
     axes[1].set_ylabel("Reward" )
     axes[1].set_title("Cumulative Reward from a Battle")
-    axes[1].set_ylim([-15,15])
+    axes[1].set_ylim([-15,10])
 
     ysmoothed = gaussian_filter1d(reward_sum,  sigma=50)
     sns.lineplot(data=  ysmoothed, ax =  axes[1], color = "#1c6dd8", linewidth = 5)
@@ -120,6 +120,7 @@ def data_analysis(metrics, save_figure_path = None, save_figure_bool = True, rol
     sns.lineplot(data=  ysmoothed, ax =  axes[2], color = "#8dafdd", linewidth = 5)
     axes[2].set_title("Number of Turns Per Battle")
 
+    axes[2].set_ylim([0,130])
     axes[2].set_xlabel("battle number")
 
     if save_figure_bool:
